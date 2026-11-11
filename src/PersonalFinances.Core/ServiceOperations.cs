@@ -3,7 +3,7 @@ using MySqlConnector;
 using System.Security.Cryptography;
 
 namespace PersonalFinances.Core;
-public sealed record ServicePaymentChange(ServiceObligation Obligation,decimal? NewPayment,DateTime? PaymentDate,string ExpectedPayments,string Token);
+public sealed record ServicePaymentChange(ServiceObligation Obligation,decimal? NewPayment,DateTime? PaymentDate,string ExpectedPayments,string Token,long? CorrectPaymentId=null);
 public sealed record ServiceRecovery(string Path,string FileHash,string LedgerFingerprint,int ServiceId,int Version);
 public sealed partial class FinanceStore
 {
@@ -20,6 +20,7 @@ public sealed partial class FinanceStore
     {
         using var timing=OperationLog.Measure("service.save");
         ServiceRules.Require(Guid.TryParseExact(change.Token,"N",out _),"Identificador de operación inválido.");
+        ServiceRules.Require(change.NewPayment==null||change.CorrectPaymentId==null,"Registrá un nuevo pago o corregí la fecha de uno existente, en operaciones separadas.");
         var o=change.Obligation;
         if(change.NewPayment!=null)
         {
@@ -40,8 +41,16 @@ public sealed partial class FinanceStore
         var paid=payments.Where(p=>!p.Voided).Sum(p=>p.Amount);
         ServiceRules.Require(change.NewPayment==null||o.AmountConfirmed&&change.NewPayment<=o.Amount-paid,"El nuevo pago supera el saldo restante o falta el importe del período.");
         ServiceRules.Require(change.NewPayment==null||change.PaymentDate!=null&&ServiceRules.DateValid(change.PaymentDate.Value),"Ingresá una fecha válida para el pago.");
+        ServicePayment? correction=null;
+        if(change.CorrectPaymentId is {} paymentId)
+        {
+            correction=payments.SingleOrDefault(p=>p.Id==paymentId&&!p.Voided);
+            ServiceRules.Require(correction!=null,"El pago a corregir no pertenece al período o fue anulado. Volvé a abrir el servicio.");
+            ServiceRules.Require(change.PaymentDate!=null&&ServiceRules.DateValid(change.PaymentDate.Value),"Ingresá una fecha válida para el pago registrado.");
+        }
         var id=await SaveObligation(c,t,o);
         if(change.NewPayment is {} amount)await SaveServicePayment(c,t,new(){ObligationId=id,Amount=amount,Date=change.PaymentDate!.Value,Token=change.Token});
+        if(correction!=null&&correction.Date!=change.PaymentDate)await SaveServicePayment(c,t,correction with{Date=change.PaymentDate!.Value});
         return id;
     });
     public async Task DeleteServiceWithRecoveryAsync(ServiceRecovery recovery,bool confirmed)

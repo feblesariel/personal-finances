@@ -30,7 +30,31 @@ internal static class ServiceUiChecks
         check(vm.SheetRows.Single(r=>r.Name==first.Name).Entry is {Paid:5000,Status:"Parcial"},"Servicios UI: nuevo pago parcial guardado desde modal sin duplicarse");
         vm.SelectedSheetRow=vm.SheetRows.Single(r=>r.Name==first.Name);await Dialog(()=>grid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(grid),0,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent}),(w,m)=>{var e=(ServiceEntryEditor)m;check(e.NewPayment=="","Servicios UI: reabrir no precarga el pago anterior");e.NewPayment="10.000,00";});
         check(vm.SheetRows.Single(r=>r.Name==first.Name).Entry is {Paid:15000,Status:"Pagado",Payments.Count:2},"Servicios UI: segundo pago acumula y deja PAGADO");
-        var store=new FinanceStore(profile);for(var i=0;i<6;i++)await store.SaveServiceAsync(new(){Name="Stress servicio "+i});await store.CreateServiceMonthAsync(DateTime.Today,false);await vm.RefreshAsync();
+        var store=new FinanceStore(profile);
+        var linkedin=new RecurringService{Name="LINKEDIN fecha UI",Frequency="Anual",Currency="USD",DueMonth=6};linkedin.Id=await store.SaveServiceAsync(linkedin);
+        var linkedinObligation=new ServiceObligation{ServiceId=linkedin.Id,Period=new(2026,11,1),Amount=19.72m,Currency="USD",Due=new(2026,6,28)};linkedinObligation.Id=await store.SaveObligationAsync(linkedinObligation);
+        var linkedinPayment=new ServicePayment{ObligationId=linkedinObligation.Id,Amount=19.72m,Date=new(2026,11,11),Method="VISA",Notes="Renovación original"};linkedinPayment.Id=await store.SaveServicePaymentAsync(linkedinPayment);
+        await vm.RefreshAsync();vm.SheetMonth=vm.SheetMonths.Single(m=>m.Month==new DateTime(2026,11,1));vm.SelectedSheetRow=vm.SheetRows.Single(r=>r.ServiceId==linkedin.Id);
+        await Dialog(()=>vm.OpenServiceCommand.Execute(null),(w,m)=>
+        {
+            var picker=InteractionChecks.Visuals<DatePicker>(w).Single(p=>System.Windows.Automation.AutomationProperties.GetAutomationId(p)=="ServicePaymentDate");
+            picker.SelectedDate=new(2026,6,28);picker.GetBindingExpression(DatePicker.SelectedDateProperty)!.UpdateSource();
+            screenshot(w,System.IO.Path.Combine(artifacts,"linkedin-payment-date.png"));
+        });
+        check(vm.SheetRows.Single(r=>r.ServiceId==linkedin.Id).Entry is {PaymentDate:{Year:2026,Month:6,Day:28},Paid:19.72m,Status:"Pagado",CoverageEnd:{Year:2027,Month:6,Day:28}},"LINKEDIN UI: cambiar sólo fecha de 11/11 a 28/06 se refleja en tabla y vigencia anual");
+        var corrected=(await store.ReadAsync()).Services.Payments.Single(p=>p.Id==linkedinPayment.Id);
+        check(corrected.Date==new DateTime(2026,6,28)&&corrected.Amount==linkedinPayment.Amount&&corrected.Notes==linkedinPayment.Notes&&corrected.Method==linkedinPayment.Method&&(await store.ReadAsync()).Services.Payments.Count(p=>p.ObligationId==linkedinObligation.Id)==1,"LINKEDIN UI: MySQL conserva el mismo pago sin cambiar monto, notas ni medio");
+        vm.SelectedSheetRow=vm.SheetRows.Single(r=>r.ServiceId==linkedin.Id);
+        await Dialog(()=>vm.OpenServiceCommand.Execute(null),(_,m)=>{var e=(ServiceEntryEditor)m;check(e.NewPayment==""&&e.PaymentDate==new DateTime(2026,6,28),"LINKEDIN UI: al reabrir se muestra la fecha corregida y no se precarga otro pago");});
+        check((await store.ReadAsync()).Services.Payments.Single(p=>p.Id==linkedinPayment.Id).Version==corrected.Version,"LINKEDIN UI: guardar sin cambios no modifica ni duplica el pago");
+        var export=new ExportService(store);var exported=await export.TryAsync(true);var exportLimit=DateTime.UtcNow.AddSeconds(40);while(!exported&&DateTime.UtcNow<exportLimit){await Task.Delay(80);exported=await export.TryAsync(true);}if(!exported)throw new Exception("LINKEDIN export timeout");
+        var txt=await System.IO.File.ReadAllTextAsync(LocalConfig.Preferences().ExportPath!);var section=txt[txt.IndexOf("LINKEDIN fecha UI",StringComparison.OrdinalIgnoreCase)..];
+        check(section.Contains("28/06/2026")&&section.Contains("27/06/2027"),"LINKEDIN UI: TXT muestra fecha corregida y nueva vigencia");
+        var beforeNewPayment=new ServiceEntryEditor(store,vm.SheetRows.Single(r=>r.ServiceId==linkedin.Id).Entry,new Dialogs());
+        check(beforeNewPayment.PaymentDate==new DateTime(2026,6,28),"Modal: muestra la fecha del último pago existente");beforeNewPayment.NewPayment="1,00";check(beforeNewPayment.PaymentDate==DateTime.Today,"Modal: nuevo pago propone hoy en vez de reutilizar una fecha antigua");
+        beforeNewPayment.PaymentDate=DateTime.Today.AddDays(-2);beforeNewPayment.NewPayment="";check(beforeNewPayment.PaymentDate==new DateTime(2026,6,28),"Modal: cancelar un nuevo monto recupera la fecha del pago registrado");
+        beforeNewPayment.PaymentDate=new DateTime(2026,6,27);beforeNewPayment.NewPayment="1,00";check(beforeNewPayment.PaymentDate==new DateTime(2026,6,27),"Modal: ingresar un nuevo monto conserva una fecha elegida expresamente");
+        for(var i=0;i<6;i++)await store.SaveServiceAsync(new(){Name="Stress servicio "+i});await store.CreateServiceMonthAsync(DateTime.Today,false);await vm.RefreshAsync();
         var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);using var release=new ManualResetEventSlim();var blocked=new ExportService(store){BeforeFileWrite=()=>{entered.TrySetResult();if(!release.Wait(TimeSpan.FromSeconds(90)))throw new TimeoutException("Test IO delay");}};
         var previousFolder=System.IO.Path.GetDirectoryName(LocalConfig.Preferences().ExportPath!)!;var stressFolder=System.IO.Path.Combine(LocalConfig.Folder,"stress-drive");System.IO.Directory.CreateDirectory(stressFolder);LocalConfig.SetExportFolder(stressFolder);
         Task<bool>? exporting=null;var startLimit=DateTime.UtcNow.AddSeconds(30);

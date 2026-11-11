@@ -23,6 +23,16 @@ internal static class ServiceOperationTests
         await Reject(()=>store.SaveServiceChangeAsync(new(entry.Obligation!,-1,DateTime.Today,ServiceSheet.PaymentStamp(entry.Payments),Guid.NewGuid().ToString("N"))),"Modal: rechaza pagos negativos");
         await store.SaveServiceChangeAsync(new(entry.Obligation!,70,DateTime.Today,ServiceSheet.PaymentStamp(entry.Payments),Guid.NewGuid().ToString("N")));entry=await Entry(svc.Id);
         check(entry.Status=="Pagado"&&entry.Payments.Count==2,"Modal: segundo pago se acumula y completa el total");
+        var previousPayments=entry.Payments.Select(p=>p with{}).ToList();var last=previousPayments.OrderByDescending(p=>p.Date).ThenByDescending(p=>p.Id).First();
+        var dateChange=new ServicePaymentChange(entry.Obligation!,null,DateTime.Today.AddDays(-5),ServiceSheet.PaymentStamp(entry.Payments),Guid.NewGuid().ToString("N"),last.Id);
+        await store.SaveServiceChangeAsync(dateChange);entry=await Entry(svc.Id);
+        var expectedPayments=previousPayments.Select(p=>p.Id==last.Id?p with{Date=dateChange.PaymentDate!.Value,Version=p.Version+1}:p);
+        check(entry.Paid==100&&entry.Status=="Pagado"&&entry.Payments.OrderBy(p=>p.Id).SequenceEqual(expectedPayments.OrderBy(p=>p.Id)),"Modal: corregir fecha conserva IDs, importes, medios, notas y demás pagos, sin duplicados");
+        await Reject(()=>store.SaveServiceChangeAsync(dateChange),"Modal: rechaza corrección de fecha con una versión desactualizada");
+        var freshChange=dateChange with{Obligation=entry.Obligation!,ExpectedPayments=ServiceSheet.PaymentStamp(entry.Payments)};
+        await Reject(()=>store.SaveServiceChangeAsync(freshChange with{PaymentDate=null}),"Modal: corregir fecha exige una fecha válida");
+        await Reject(()=>store.SaveServiceChangeAsync(freshChange with{CorrectPaymentId=long.MaxValue}),"Modal: no permite corregir un pago ajeno al período");
+        await Reject(()=>store.SaveServiceChangeAsync(freshChange with{NewPayment=1}),"Modal: no mezcla corrección de fecha y un nuevo pago");
         var annual=new RecurringService{Name="Anual cobertura prueba",Frequency="Anual",Currency="USD",DueMonth=1};annual.Id=await store.SaveServiceAsync(annual);
         var annualO=new ServiceObligation{ServiceId=annual.Id,Period=new(2026,1,1),Amount=19.99m,Currency="USD"};annualO.Id=await store.SaveObligationAsync(annualO);await store.SaveServicePaymentAsync(new(){ObligationId=annualO.Id,Amount=19.99m,Date=new(2026,6,2)});
         var covered=true;for(var i=0;i<12;i++){var r=await Entry(annual.Id,new DateTime(2026,6,1).AddMonths(i),new(2026,11,11));covered&=r.Status=="Pagado"&&r.PaymentDate==new DateTime(2026,6,2)&&r.Paid==19.99m;}
@@ -44,6 +54,7 @@ internal static class ServiceOperationTests
         check(before.Movements.SequenceEqual(deleted.Movements)&&deleted.Services.Any(s=>s.Id==annual.Id),"Eliminar: conserva consumos y todos los demás servicios");
         var prepared=await bs.PrepareRestoreAsync(backupPath,password);await bs.RestoreAsync(prepared,true);
         check(BackupValidation.Fingerprint((await store.CaptureBackupAsync("test")).Document)==BackupValidation.Fingerprint(before),"Eliminar: respaldo recupera exactamente el servicio eliminado y toda la contabilidad");
+        check((await Entry(svc.Id)).Payments.Single(p=>p.Id==last.Id).Date==dateChange.PaymentDate,"Modal: exportar y restaurar conserva la fecha de pago corregida");
         var missing=before.ServiceObligations.First(o=>!o.AmountConfirmed);check(await c.ExecuteScalarAsync<bool>("SELECT amount IS NULL FROM service_obligations WHERE id=@id",new{id=missing.Id}),"Restaurar: los importes sin cargar vuelven como NULL real");
         check((await Entry(annual.Id,new(2026,11,1),new(2026,11,11))).Status=="Pagado","Anual: restauración conserva pagos y cobertura calculada");
     }
