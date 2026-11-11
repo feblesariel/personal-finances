@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>PersonalFinances</AssemblyName><Version>1.6.0</Version><ApplicationIcon>Assets/app.ico</ApplicationIcon><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained><PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract><PublishTrimmed>false</PublishTrimmed>
+    <AssemblyName>PersonalFinances</AssemblyName><Version>1.7.0</Version><ApplicationIcon>Assets/app.ico</ApplicationIcon><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained><PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract><PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../PersonalFinances.Core/PersonalFinances.Core.csproj" /></ItemGroup>
   <ItemGroup><Resource Include="Assets/app.ico" /></ItemGroup>

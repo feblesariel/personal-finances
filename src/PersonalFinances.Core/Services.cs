@@ -60,7 +60,7 @@ public sealed record ServiceRow(RecurringService Service,ServiceObligation Oblig
     public decimal Paid => Payments.Where(p=>!p.Voided).Sum(p=>p.Amount);
     public decimal Balance => Obligation.Amount-Paid;
     public bool Overdue => Obligation.AmountConfirmed&&Balance>0 && Obligation.Due is {} due && due.Date<Today.Date;
-    public string BaseStatus => !Obligation.AmountConfirmed?"Sin cargar":Obligation.Amount==0?"Bonificado":Balance==0?"Pagado":Paid>0?"Pago parcial":"Pendiente";
+    public string BaseStatus => !Obligation.AmountConfirmed?"Sin cargar":Obligation.Amount==0?"Sin cargo":Balance==0?"Pagado":Paid>0?"Pago parcial":"Pendiente";
     public string Status => BaseStatus+(Overdue?" · Vencido":"")+(Obligation.Minimum is >0 && Paid>=Obligation.Minimum?" · Mínimo cubierto":"");
     public string AmountLabel => Money.Format(Obligation.Amount,Obligation.Currency);
     public string PaidLabel => Money.Format(Paid,Obligation.Currency);

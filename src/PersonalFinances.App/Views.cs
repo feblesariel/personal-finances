@@ -25,6 +25,8 @@ public sealed class Dialogs : IDialogs
         if(vm is ImportEditor)editor.Width=1080;
         if(vm is ServicePaymentsEditor){editor.Width=820;editor.Height=580;}
         if(vm is ServiceEditor)editor.Height=660;
+        if(vm is ServiceEntryEditor){editor.Width=570;editor.Height=640;}
+        if(vm is DeleteServiceEditor){editor.Width=580;editor.Height=510;}
         if(vm is ServiceMonthEditor){editor.Width=490;editor.Height=420;}
         bool? pending=null;
         void RequestClose(bool result){if(vm.Busy)pending=result;else editor.DialogResult=result;}

@@ -47,18 +47,22 @@ public sealed class ExportService(FinanceStore store)
 {
     private static readonly SemaphoreSlim gate=new(1,1);
     public string Status {get;private set;}="Resumen pendiente";
-    public async Task<bool> TryAsync(bool force=false)
+    public Task<bool> TryAsync(bool force=false)=>Task.Run(()=>TryInBackgroundAsync(force));
+    internal Action? BeforeFileWrite {get;set;}
+    private async Task<bool> TryInBackgroundAsync(bool force)
     {
         if(!await gate.WaitAsync(0))return false;
         string? temp=null;
         try
         {
+            using var timing=OperationLog.Measure("summary.export");
             var s=await store.ReadAsync();var path=LocalConfig.ResolveExportPath(s.Settings.GetValueOrDefault("export_path"),true);
             if(string.IsNullOrWhiteSpace(path)){Status="Elegí una carpeta en Configuración → Exportación de resumen";return false;}
             var preferences=LocalConfig.Preferences();
             if(!force&&preferences.ExportedRevision==s.Revision&&preferences.ExportedConnection==store.Profile.Identity&&preferences.ExportedServiceSort==preferences.ServiceSort&&File.Exists(path)&&File.GetLastWriteTime(path).Date==DateTime.Today){Status="Resumen actualizado";return true;}
             var folder=Path.GetDirectoryName(path);
             if(!Path.IsPathFullyQualified(path) || string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) throw new IOException("Destino no disponible");
+            BeforeFileWrite?.Invoke();
             temp=Path.Combine(folder,".personal-finances-"+Guid.NewGuid().ToString("N")+".tmp");
             await File.WriteAllTextAsync(temp,TextReport.Render(s,DateTime.Now,preferences.ServiceSort),new UTF8Encoding(false));
             if(File.Exists(path)) File.Replace(temp,path,null);else File.Move(temp,path);

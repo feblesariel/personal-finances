@@ -5,7 +5,7 @@ namespace PersonalFinances.Core;
 public sealed partial class FinanceStore
 {
     private const string ServiceSql="SELECT id,name,type,frequency,currency,usual_amount UsualAmount,usual_amount_usd UsualAmountUsd,due_day DueDay,due_month DueMonth,notes,active,card_id CardId,version FROM recurring_services";
-    private const string ObligationSql="SELECT id,service_id ServiceId,period,due,amount,amount_confirmed AmountConfirmed,currency,minimum,installment,installments,notes,version FROM service_obligations";
+    private const string ObligationSql="SELECT id,service_id ServiceId,period,due,COALESCE(amount,0) Amount,amount_confirmed AmountConfirmed,currency,minimum,installment,installments,notes,version FROM service_obligations";
     private const string PaymentSql="SELECT id,token,obligation_id ObligationId,payment_date Date,amount,method,notes,voided,version FROM service_payments";
     private static async Task<ServiceLedger> ReadServices(MySqlConnection c,MySqlTransaction t) => new ServiceLedger((await c.QueryAsync<RecurringService>(ServiceSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServiceObligation>(ObligationSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServicePayment>(PaymentSql+" ORDER BY id",transaction:t)).ToList()){Months=(await c.QueryAsync<DateTime>("SELECT period FROM service_months ORDER BY period",transaction:t)).ToList()};
     private static async Task MigrateServices(MySqlConnection c)
@@ -66,9 +66,10 @@ public sealed partial class FinanceStore
         ServiceRules.Require(old==null||old.Currency==o.Currency||await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM service_payments WHERE obligation_id=@Id",o,t)==0,"No se puede cambiar la moneda con pagos registrados.");
         ServiceRules.Require(!await c.ExecuteScalarAsync<bool>("SELECT EXISTS(SELECT 1 FROM service_obligations WHERE service_id=@ServiceId AND id<>@Id AND (@card=0 OR currency=@Currency) AND period=@Period)",new{o.ServiceId,o.Id,o.Period,annual=s.Frequency=="Anual",o.Currency,card=s.Type=="Tarjeta de crédito"},t),"Ya existe ese período del servicio.");
         await c.ExecuteAsync("INSERT IGNORE INTO service_months VALUES(@Period)",o,t);
-        if(o.Id==0)return await c.ExecuteScalarAsync<long>("INSERT INTO service_obligations(service_id,period,due,amount,amount_confirmed,currency,minimum,installment,installments,notes) VALUES(@ServiceId,@Period,@Due,@Amount,@AmountConfirmed,@Currency,@Minimum,@Installment,@Installments,@Notes); SELECT LAST_INSERT_ID();",o,t);
+        var values=new DynamicParameters(o);values.Add("AmountDb",o.AmountConfirmed?(decimal?)o.Amount:null);
+        if(o.Id==0)return await c.ExecuteScalarAsync<long>("INSERT INTO service_obligations(service_id,period,due,amount,amount_confirmed,currency,minimum,installment,installments,notes) VALUES(@ServiceId,@Period,@Due,@AmountDb,@AmountConfirmed,@Currency,@Minimum,@Installment,@Installments,@Notes); SELECT LAST_INSERT_ID();",values,t);
         await Audit(c,t,"service_obligations",o.Id,"edit",old);
-        await c.ExecuteAsync("UPDATE service_obligations SET due=@Due,amount=@Amount,amount_confirmed=@AmountConfirmed,currency=@Currency,minimum=@Minimum,installment=@Installment,installments=@Installments,notes=@Notes,version=version+1 WHERE id=@Id",o,t);return o.Id;
+        await c.ExecuteAsync("UPDATE service_obligations SET due=@Due,amount=@AmountDb,amount_confirmed=@AmountConfirmed,currency=@Currency,minimum=@Minimum,installment=@Installment,installments=@Installments,notes=@Notes,version=version+1 WHERE id=@Id",values,t);return o.Id;
     }
     public Task<long> SaveServicePaymentAsync(ServicePayment p)=>Write((c,t)=>SaveServicePayment(c,t,p));
     private static async Task<long> SaveServicePayment(MySqlConnection c,MySqlTransaction t,ServicePayment p)

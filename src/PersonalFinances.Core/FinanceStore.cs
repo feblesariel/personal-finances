@@ -71,6 +71,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
             await MigrateServices(c);
             await MigrateFlexibleServices(c);
             await MigrateServiceSheet(c);
+            await MigrateNullableServiceAmount(c);
         }
         finally
         {
@@ -93,6 +94,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
     }
     private async Task<T> Write<T>(Func<MySqlConnection,MySqlTransaction,Task<T>> work)
     {
+        using var timing=OperationLog.Measure("database.write");
         await using var c=await Open(); await using var tx=await c.BeginTransactionAsync();
         // Every mutation acquires this row, making assignment, overlap checks and multi-step edits serializable.
         await c.ExecuteScalarAsync<string>("SELECT `value` FROM settings WHERE `key`='revision' FOR UPDATE",transaction:tx);

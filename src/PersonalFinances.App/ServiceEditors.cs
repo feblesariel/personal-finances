@@ -34,7 +34,7 @@ public sealed class ObligationEditor : EditorViewModel
     public bool NewPeriod=>Model.Id==0;
     public bool DualCurrency=>IsCard&&NewPeriod;
     public string AmountUsd {get;set;}="0,00";
-    public string AmountLabel=>DualCurrency?"Importe del resumen en ARS":"Importe exigible (0 = Bonificado)";
+    public string AmountLabel=>DualCurrency?"Importe del resumen en ARS":"Importe exigible (0 = Sin cargo)";
     public bool IsCard {get;}
     public string Installment {get;set;}
     public string Installments {get;set;}

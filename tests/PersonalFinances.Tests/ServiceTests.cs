@@ -29,7 +29,7 @@ internal static class ServiceTests
         check((await Row(o.Id)).Balance==60,"Servicios: corrección de pago recalcula saldo");
         await store.SaveServicePaymentAsync(p2 with{Voided=true});check((await Row(o.Id)).Balance==70,"Servicios: anulación conserva historial y libera saldo");
         await store.SaveServicePaymentAsync(new(){ObligationId=o.Id,Amount=70});check((await Row(o.Id)).BaseStatus=="Pagado","Servicios: pago completo calculado");
-        var zero=next with{Id=0,Period=next.Period.AddMonths(1),Amount=0};zero.Id=await store.SaveObligationAsync(zero);check((await Row(zero.Id)).BaseStatus=="Bonificado","Servicios: importe cero bonificado");
+        var zero=next with{Id=0,Period=next.Period.AddMonths(1),Amount=0};zero.Id=await store.SaveObligationAsync(zero);check((await Row(zero.Id)).BaseStatus=="Sin cargo","Servicios: importe cero bonificado");
         var card=new RecurringService{Name="VISA obligación",Type="Tarjeta de crédito",CardId=before.Document.Cards[0].Id};card.Id=await store.SaveServiceAsync(card);
         var bill=new ServiceObligation{ServiceId=card.Id,Period=new(2026,11,1),Due=new(2026,11,30),Amount=2504268.44m,Minimum=194340};bill.Id=await store.SaveObligationAsync(bill);
         await store.SaveServicePaymentAsync(new(){ObligationId=bill.Id,Amount=194340,Notes="Pago mínimo"});

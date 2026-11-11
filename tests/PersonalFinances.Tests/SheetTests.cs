@@ -20,7 +20,7 @@ internal static class SheetTests
         await Save(monthly.Id,22554.99m,true,22554.99m,new(2035,11,30));var full=await Row(monthly.Id);
         check(full.Status=="Pagado"&&full.Payments.Count==2&&full.PaymentDate==new DateTime(2035,11,30),"Planilla: aumentar abonado acumula pagos independientes y fecha");
         await Reject(()=>Save(monthly.Id,22554.99m,true,5,DateTime.Today),"Planilla: una reducción no borra pagos previos");
-        await Save(card.Id,0,true,0,null);check((await Row(card.Id)).Status=="Bonificado","Planilla: cero confirmado bonifica explícitamente");
+        await Save(card.Id,0,true,0,null);check((await Row(card.Id)).Status=="Sin cargo","Planilla: cero confirmado bonifica explícitamente");
         await store.CreateServiceMonthAsync(month.AddMonths(1));check((await Row(monthly.Id,month.AddMonths(1))) is {Confirmed:false,Paid:0,PaymentDate:null},"Planilla: nuevo mes no copia pagos, fechas ni estados");
         check((await Row(monthly.Id)).Paid==22554.99m,"Planilla: noviembre conserva todos sus pagos al crear diciembre");
         await Reject(()=>store.CreateServiceMonthAsync(month),"Planilla: no duplica meses existentes");

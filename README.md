@@ -99,7 +99,7 @@ La restauración usa una única transacción InnoDB con claves foráneas activas
 
 ### Formato y compatibilidad
 
-Formato de respaldo **v4** (contenido; contenedor cifrado v1 compatible), independiente de la versión del programa: JSON comprimido con Brotli y cifrado autenticado **AES-256-GCM** (nonce de 12 bytes, tag de 16 bytes), clave derivada con **PBKDF2-HMAC-SHA256, 600.000 iteraciones y salt aleatorio de 32 bytes**. La cabecera también se autentica. Se usan las implementaciones criptográficas de .NET, sin algoritmos propios. Cada archivo se escribe mediante temporal cifrado, se descifra para verificarlo y se reemplaza de forma segura. Límite de esta versión: **64 MB cifrados / 128 MB descomprimidos**; archivos dañados o versiones incompatibles se rechazan antes de modificar la base.
+Formato de respaldo **v5** (contenido; contenedor cifrado v1 compatible), independiente de la versión del programa: JSON comprimido con Brotli y cifrado autenticado **AES-256-GCM** (nonce de 12 bytes, tag de 16 bytes), clave derivada con **PBKDF2-HMAC-SHA256, 600.000 iteraciones y salt aleatorio de 32 bytes**. La cabecera también se autentica. Se usan las implementaciones criptográficas de .NET, sin algoritmos propios. Cada archivo se escribe mediante temporal cifrado, se descifra para verificarlo y se reemplaza de forma segura. Límite de esta versión: **64 MB cifrados / 128 MB descomprimidos**; archivos dañados o versiones incompatibles se rechazan antes de modificar la base.
 
 La migración 3 agrega solamente un identificador de contabilidad (`ledger_id`). Ese identificador junto con los IDs originales y los tokens de movimientos se conserva al transferir, para permitir una futura fusión con resolución de conflictos. Esta versión implementa únicamente restauración completa. La compatibilidad futura se comprobará antes de restaurar; no se interpreta un formato desconocido por aproximación.
 
@@ -116,29 +116,37 @@ La suite incluye una transferencia entre dos bases independientes, comparación 
 
 Las pruebas de MySQL reciben credenciales de prueba por las variables de proceso `PF_ADMIN_USER` y `PF_ADMIN_PASSWORD`, usan bases temporales `personal_finances_tests_*` y las eliminan al terminar. Aíslan configuración y carpetas de exportación y no insertan datos en producción. Los resultados se guardan en `artifacts`, excluida de Git. Las pruebas del instalador usan destinos temporales propios. No versionar datos reales, archivos `.pfinance`, respaldos SQL, ejecutables, credenciales ni configuración local. Esta distribución compilada desde fuente no tiene firma Authenticode.
 
-## Servicios: planilla mensual (1.6)
+## Servicios: planilla y modal (1.7)
 
-Servicios es independiente de los consumos. Cada tarjeta ocupa una sola fila en **ARS**, con el importe final que ingreses manualmente. No convierte USD ni descuenta pagos de los consumos del dashboard.
+La planilla conserva su diseño compacto, pero es **sólo lectura**. Un clic selecciona la fila; **doble clic o Enter** abre el servicio del mes seleccionado. Escape cierra el modal. Las columnas siguen admitiendo cambios de ancho/orden, clasificación y Restablecer tabla, sin modificar datos.
 
-- Seleccioná el mes arriba de la tabla. **Nuevo período** propone el mes siguiente y crea toda la lista de servicios activos, sin copiar pagos, fechas ni importes confirmados. Los meses anteriores conservan su historial. No se permiten meses duplicados.
-- **Doble clic** en una celda para editar importe, abonado acumulado, fecha de pago, vencimiento u observaciones. **Tab** pasa de campo, **Enter** confirma la fila y **Escape** cancela. Se guarda la fila en una transacción; los errores conservan la edición y se muestran al pie.
-- Un aumento del abonado acumulado registra un nuevo pago por la diferencia. No borra los pagos previos. Se propone la fecha actual y podés reemplazarla por la fecha real. Si hay varios pagos, la fecha visible es la última; las correcciones individuales se hacen desde **⋯ → Pagos de esta fila**.
-- Una celda de importe vacía es **SIN CARGAR**. Al cargar un importe positivo pasa a **PENDIENTE**, **PARCIAL** o **PAGADO** según el saldo. Escribir explícitamente **0** confirma **BONIFICADO**. Los importes habituales se ofrecen como referencia, sin confirmarlos automáticamente.
-- El vencimiento es opcional. Si corresponde, se muestra un indicador discreto **Vencido**. El pago mínimo cubierto se informa sin confundirlo con el pago completo.
-- Los servicios anuales se crean solamente en su mes de renovación. En los demás meses se muestran como **No corresponde** y no suman pendientes. Los servicios inactivos conservan sus meses anteriores.
-- **⋯** o clic derecho permite consultar/corregir/anular pagos, agregar otro pago, editar los datos generales/desactivar el servicio y consultar mínimo o cuotas. El historial se muestra sólo a pedido.
-- Podés cambiar anchos, orden de columnas y clasificación. **Restablecer tabla** recupera la presentación original y borra las preferencias locales de esa tabla; no modifica datos. Consumos y Servicios tienen preferencias independientes.
+El modal muestra solamente importe del período, **nuevo** monto abonado, fecha del pago (hoy por defecto) y vencimiento opcional. El nuevo abono siempre empieza vacío. Guardar sin abono cambia sólo importe/vencimiento; guardar con abono positivo agrega un registro independiente. No reemplaza pagos anteriores, no supera el saldo ni duplica por doble clic/Enter o reintento de una respuesta perdida. Los errores mantienen el modal abierto.
 
-La tabla crece con la ventana y tiene un único desplazamiento de filas, con encabezados fijos. La pantalla muestra sólo el selector mensual, Nuevo período, Agregar servicio, un resumen compacto y la planilla.
+- **SIN CARGAR:** importe no informado, almacenado como NULL en MySQL.
+- **SIN CARGO:** importe confirmado igual a cero.
+- **PENDIENTE / PARCIAL / PAGADO:** calculados con los pagos reales.
+- Vencido y mínimo cubierto son indicadores discretos; cubrir el mínimo no cancela el saldo.
 
-### Migración y datos anteriores
+**Nuevo período** conserva los servicios activos y comienza sin importes confirmados ni pagos copiados. Los meses anteriores y los servicios inactivos conservan su historial. Cada tarjeta ocupa una fila ARS con el importe final ingresado manualmente; los antiguos USD siguen archivados, sin conversiones ni mezcla con consumos.
 
-La migración incremental **6** agrega `amount_confirmed` y la tabla `service_months`; conserva todas las entidades, IDs, importes, observaciones y pagos existentes. Los antiguos ceros que no distinguían entre falta de carga y bonificación quedan **Sin cargar**: ingresá 0 si efectivamente no corresponde pagar. Los importes positivos y pagos no se modifican.
+### Servicios anuales
 
-Las obligaciones USD anteriores de tarjetas permanecen en la base y en los respaldos. Si tienen cargos, pagos, notas o mínimos, la fila ARS muestra **Revisar USD anteriores**; se consultan en Pagos de esta fila, sin convertir ni sumar monedas. Los registros USD vacíos no generan otra fila.
+Una obligación anual completamente pagada cubre desde su fecha real de pago completo hasta antes del aniversario siguiente (`AddYears(1)`, incluyendo el ajuste de 29/02). Durante la vigencia se muestra PAGADO con la fecha original en los meses cubiertos, sin crear doce pagos ni repetir obligaciones. El mes actual usa la fecha de hoy; los demás meses se consultan a su cierre. Historial conserva todas las renovaciones. Registrar renovación permite cargar otro pago anual sin borrar el anterior; antes de pagar nunca se muestra una vigencia ficticia. Al vencer, la renovación queda Sin cargar o muestra la obligación pendiente que corresponda.
 
-El TXT conserva intacto el bloque de tarjetas y agrega un bloque compacto de Servicios del mes vigente, distinguiendo **Exigible**, **Abonado** y saldo. Usa el mismo orden de clasificación de la planilla. No exporta el historial extenso de pagos. Mantiene reemplazo seguro y reintentos de Drive.
+### Historial y eliminación
 
-El respaldo de contenido **v4/esquema 6** conserva meses incluso vacíos, importes pendientes de confirmar, bonificaciones, todos los pagos, mínimos, cuotas, notas y archivos USD anteriores. Mantiene el cifrado y restauración transaccional existentes. Acepta v1, v2 y v3; los ceros antiguos sin confirmación se interpretan como Sin cargar. No transfiere credenciales ni rutas del equipo.
+Historial permite consultar, corregir y anular pagos individuales. Datos del servicio permite cambiar su configuración. **Eliminar servicio** es definitivo y transaccional: borra definición, obligaciones, pagos y auditoría propia, sin tocar otros servicios ni consumos. Exige un respaldo completo cifrado generado con el sistema existente, verificado y todavía disponible, y confirmación explícita del nombre/historial. Si los datos o el archivo cambian después de la copia, se exige generar otra. Conservá la contraseña del respaldo para recuperar los datos mediante la importación completa habitual.
 
-Las pruebas MySQL usan bases `personal_finances_tests_*` en un servidor independiente; `PF_ADMIN_PORT` permite seleccionar su puerto. Las pruebas WPF verifican edición real de celdas, fechas, pagos acumulados, cancelar filas, nuevos meses, columnas y crecimiento vertical.
+### Corrección del bloqueo y diagnóstico
+
+La versión anterior guardaba durante `RowEditEnding`, cancelaba y volvía a confirmar la edición y refrescaba la CollectionView en ese ciclo. Refrescar una vista con edición abierta produce `InvalidOperationException`; se agregó una prueba que reproduce ese mecanismo. Los registros anteriores incluían esa excepción sin pila, por lo que no permiten atribuir retrospectivamente cada bloqueo a una única causa.
+
+Se eliminó toda edición de celdas y sus eventos reentrantes. El guardado del modal usa comandos que rechazan ejecuciones repetidas, transacciones y tokens de pago únicos. La exportación del TXT, incluido el acceso síncrono al sistema de archivos/Drive, corre en un worker separado; no se espera para cerrar un pago guardado. Fallar Drive no revierte el pago. Se mantiene el reemplazo seguro y el reintento automático cada 30 segundos. Los logs locales incluyen operación, duración, hilo y métodos de origen de errores, sin importes, nombres de servicios, SQL parametrizado ni credenciales.
+
+La suite WPF registra 60 pagos consecutivos en seis servicios, intenta doble Guardar/reaperturas y comprueba actividad del dispatcher con una escritura del TXT deliberadamente bloqueada. También prueba la tabla en lectura, el modal, las fechas, los estados, la alineación y los respaldos. Las bases `personal_finances_tests_*` usan un servidor independiente configurable con `PF_ADMIN_PORT`.
+
+### Migración y respaldos
+
+La migración no destructiva **7** permite `amount=NULL` en obligaciones: únicamente los importes ya marcados sin confirmar pasan de su antiguo cero interno a NULL. Se conservan IDs, importes confirmados, pagos, notas y relaciones. La cobertura anual se deriva de pagos existentes; no requiere duplicarlos.
+
+El respaldo **v5/esquema 7** conserva NULL/cero, todos los meses, pagos, historial y datos para recalcular vigencias. Acepta v1–v4. La restauración conserva cifrado, copia previa, validación e integridad transaccional. No reemplaza credenciales MySQL ni ruta local de Drive. El bloque Servicios del TXT refleja los nuevos estados, fechas y vigencias; el bloque de consumos de tarjetas conserva sus cálculos.

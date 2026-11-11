@@ -4,6 +4,7 @@ namespace PersonalFinances.App;
 public sealed class BackupExportEditor : EditorViewModel
 {
     private readonly BackupService service;private string status="";
+    public BackupDocument? Result {get;private set;}
     public string Path {get;}
     public string Password {get;set;}="";
     public string Confirmation {get;set;}="";
@@ -16,7 +17,7 @@ public sealed class BackupExportEditor : EditorViewModel
     protected override async Task Save()
     {
         if(Password!=Confirmation)throw new RuleException("Las contraseñas no coinciden.");
-        await service.ExportAsync(Path,Password,new Progress<string>(s=>Status=s));
+        Result=await service.ExportAsync(Path,Password,new Progress<string>(s=>Status=s));
         Password="";Confirmation="";Close();
     }
 }
@@ -38,7 +39,7 @@ public sealed class BackupRestoreEditor : EditorViewModel
             if(prepared==null)return "";var b=prepared.Incoming;var count=BackupCounts.From(b);var target=prepared.DestinationCounts;
             var dates=b.Movements.Select(m=>m.Date).ToArray();
             var range=dates.Length==0?"Sin movimientos":dates.Min().ToString("dd/MM/yyyy")+" al "+dates.Max().ToString("dd/MM/yyyy");
-            return $"Creado: {b.CreatedAt.LocalDateTime:dd/MM/yyyy HH:mm}\nOrigen: {b.Application} {b.ApplicationVersion}\nFormato del respaldo: {b.BackupFormatVersion}\n\nCONTENIDO DEL RESPALDO\n{BackupValidation.Months(b).Count} meses · {b.Services.Count} servicios · {b.ServiceObligations.Count} obligaciones · {b.ServicePayments.Count} pagos\n{count.Cards} tarjetas · {count.Categories} categorías\n{count.Periods} períodos · {count.Movements} movimientos\n{count.Deleted} movimientos eliminados conservados\nFechas: {range}\n\nBASE ACTUAL DE ESTE EQUIPO\n{target.Services} servicios · {target.ServiceObligations} obligaciones · {target.ServicePayments} pagos\n{target.Cards} tarjetas · {target.Categories} categorías\n{target.Periods} períodos · {target.Movements} movimientos\n{target.Deleted} movimientos eliminados conservados";
+            return $"Creado: {b.CreatedAt.LocalDateTime:dd/MM/yyyy HH:mm}\nOrigen: {b.Application} {b.ApplicationVersion}\nFormato del respaldo: {b.BackupFormatVersion}\n\nCONTENIDO DEL RESPALDO\n{BackupValidation.Months(b).Count} meses · {b.Services.Count} servicios · {b.ServiceObligations.Count} obligaciones · {b.ServicePayments.Count} pagos\n{BackupValidation.Months(b).Count} meses · {b.Services.Count} servicios · {b.ServiceObligations.Count} obligaciones · {b.ServicePayments.Count} pagos\n{count.Cards} tarjetas · {count.Categories} categorías\n{count.Periods} períodos · {count.Movements} movimientos\n{count.Deleted} movimientos eliminados conservados\nFechas: {range}\n\nBASE ACTUAL DE ESTE EQUIPO\n{target.Services} servicios · {target.ServiceObligations} obligaciones · {target.ServicePayments} pagos\n{target.Services} servicios · {target.ServiceObligations} obligaciones · {target.ServicePayments} pagos\n{target.Cards} tarjetas · {target.Categories} categorías\n{target.Periods} períodos · {target.Movements} movimientos\n{target.Deleted} movimientos eliminados conservados";
         }
     }
     public BackupRestoreEditor(FinanceStore store,string path)

@@ -45,7 +45,11 @@ public static class LocalConfig
     }
     public static void Log(Exception e)
     {
-        try{Directory.CreateDirectory(Folder);var path=Path.Combine(Folder,"errors.log");if(File.Exists(path)&&new FileInfo(path).Length>1_000_000)File.Move(path,path+".old",true);File.AppendAllText(path,$"{DateTime.Now:O} {e.GetType().Name} {(e is MySqlException m?m.Number:e.HResult)}\n");}catch{}
+        try{Directory.CreateDirectory(Folder);var path=Path.Combine(Folder,"errors.log");if(File.Exists(path)&&new FileInfo(path).Length>1_000_000)File.Move(path,path+".old",true);var site=new System.Diagnostics.StackTrace(e).GetFrames()?.Select(f=>f.GetMethod()).Where(m=>m?.DeclaringType?.Namespace?.StartsWith("PersonalFinances")==true).Take(5).Select(m=>m!.DeclaringType!.Name+"."+m.Name);File.AppendAllText(path,$"{DateTime.Now:O} {e.GetType().Name} {(e is MySqlException m?m.Number:e.HResult)} {string.Join(" > ",site??[])}\n");}catch{}
+    }
+    public static void Trace(string operation,string phase,long elapsedMs)
+    {
+        try{Directory.CreateDirectory(Folder);File.AppendAllText(Path.Combine(Folder,"operations.log"),$"{DateTime.UtcNow:O} {operation} {phase} ms={elapsedMs} thread={Environment.CurrentManagedThreadId}\n");}catch{}
     }
     public static string Friendly(Exception ex)=>ex is RuleException?ex.Message:ex is MySqlException m?m.Number switch
     {

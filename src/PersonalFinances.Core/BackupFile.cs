@@ -45,8 +45,8 @@ internal static class BackupFile
             using(var json=JsonDocument.Parse(plain))
             {
                 var e=json.RootElement;
-                if(e.TryGetProperty("BackupFormatVersion",out var v)&&v.GetInt32() is 2 or 3 or 4)
-                    foreach(var collectionName in (v.GetInt32()==4?new[]{"Services","ServiceObligations","ServicePayments","ServiceMonths"}:new[]{"Services","ServiceObligations","ServicePayments"}))
+                if(e.TryGetProperty("BackupFormatVersion",out var v)&&v.GetInt32() is 2 or 3 or 4 or 5)
+                    foreach(var collectionName in (v.GetInt32()>=4?new[]{"Services","ServiceObligations","ServicePayments","ServiceMonths"}:new[]{"Services","ServiceObligations","ServicePayments"}))
                         if(!e.TryGetProperty(collectionName,out var collection)||collection.ValueKind!=JsonValueKind.Array)throw new RuleException("Faltan colecciones de servicios en el respaldo.");
             }
             return JsonSerializer.Deserialize<BackupDocument>(plain,BackupValidation.Json)??throw new RuleException("El respaldo no contiene datos válidos.");

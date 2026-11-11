@@ -23,7 +23,7 @@ public sealed partial class FinanceStore
             throw new RuleException("El esquema contiene tablas desconocidas o no transaccionales. No se puede garantizar un respaldo completo; actualizá la aplicación.");
         // The first consistent read establishes the MVCC snapshot for ALL accounting tables.
         var migrations=(await c.QueryAsync<int>("SELECT version FROM schema_migrations ORDER BY version",transaction:tx)).ToArray();
-        if(!migrations.SequenceEqual(new[]{1,2,3,4,5,6}))throw new RuleException("La versión de esta base no es compatible con los respaldos de esta aplicación.");
+        if(!migrations.SequenceEqual(new[]{1,2,3,4,5,6,7})&&!migrations.SequenceEqual(new[]{1,2,3,4,5,6}))throw new RuleException("La versión de esta base no es compatible con los respaldos de esta aplicación.");
         var cards=(await c.QueryAsync<BackupNamed>("SELECT id,seed_key SeedKey,name,active FROM cards ORDER BY id",transaction:tx)).ToImmutableArray();
         progress?.Report("Leyendo tarjetas y categorías…");
         var categories=(await c.QueryAsync<BackupNamed>("SELECT id,seed_key SeedKey,name,active FROM categories ORDER BY id",transaction:tx)).ToImmutableArray();
@@ -46,7 +46,7 @@ public sealed partial class FinanceStore
                 e.GetProperty("Lines").Deserialize<ImmutableArray<BackupImportLine>>(BackupValidation.Json),e.GetProperty("ImportedAt").GetDateTimeOffset()));
         }
         var services=await ReadServices(c,tx);
-        var document=new BackupDocument{ServiceMonths=services.Months,Services=services.Services,ServiceObligations=services.Obligations,ServicePayments=services.Payments,ApplicationVersion=version,LedgerId=settings.GetValueOrDefault("ledger_id")??"",Cards=cards,Categories=categories,Periods=periods,Movements=movements,Audit=audit,Imports=imports.ToImmutable()};
+        var document=new BackupDocument{BackupFormatVersion=migrations[^1]==6?4:5,DatabaseSchemaVersion=migrations[^1],ServiceMonths=services.Months,Services=services.Services,ServiceObligations=services.Obligations,ServicePayments=services.Payments,ApplicationVersion=version,LedgerId=settings.GetValueOrDefault("ledger_id")??"",Cards=cards,Categories=categories,Periods=periods,Movements=movements,Audit=audit,Imports=imports.ToImmutable()};
         await Task.Run(()=>BackupValidation.Validate(document));
         return new(document,long.Parse(settings["revision"],System.Globalization.CultureInfo.InvariantCulture));
     }
@@ -71,7 +71,7 @@ public sealed partial class FinanceStore
         foreach(var m in b.Movements.Where(m=>m.OriginalId!=null))await c.ExecuteAsync("UPDATE movements SET original_id=@OriginalId,updated_at=@UpdatedAt WHERE id=@Id",m,tx);
         foreach(var month in BackupValidation.Months(b))await c.ExecuteAsync("INSERT INTO service_months VALUES(@month)",new{month},tx);
         if(b.Services.Count>0)await c.ExecuteAsync("INSERT INTO recurring_services(id,name,type,frequency,currency,usual_amount,usual_amount_usd,due_day,due_month,notes,active,card_id,version) VALUES(@Id,@Name,@Type,@Frequency,@Currency,@UsualAmount,@UsualAmountUsd,@DueDay,@DueMonth,@Notes,@Active,@CardId,@Version)",b.Services,tx);
-        if(b.ServiceObligations.Count>0)await c.ExecuteAsync("INSERT INTO service_obligations(id,service_id,period,due,amount,amount_confirmed,currency,minimum,installment,installments,notes,version) VALUES(@Id,@ServiceId,@Period,@Due,@Amount,@AmountConfirmed,@Currency,@Minimum,@Installment,@Installments,@Notes,@Version)",BackupValidation.Obligations(b),tx);
+        if(b.ServiceObligations.Count>0)await c.ExecuteAsync("INSERT INTO service_obligations(id,service_id,period,due,amount,amount_confirmed,currency,minimum,installment,installments,notes,version) VALUES(@Id,@ServiceId,@Period,@Due,@AmountDb,@AmountConfirmed,@Currency,@Minimum,@Installment,@Installments,@Notes,@Version)",BackupValidation.Obligations(b).Select(o=>{var p=new DynamicParameters(o);p.Add("AmountDb",o.AmountConfirmed?(decimal?)o.Amount:null);return p;}),tx);
         if(b.ServicePayments.Count>0)await c.ExecuteAsync("INSERT INTO service_payments(id,token,obligation_id,payment_date,amount,method,notes,voided,version) VALUES(@Id,@Token,@ObligationId,@Date,@Amount,@Method,@Notes,@Voided,@Version)",b.ServicePayments,tx);
         if(b.Audit.Length>0)await c.ExecuteAsync("INSERT INTO audit_log(id,entity,entity_id,action,before_json,changed_at) VALUES(@Id,@Entity,@EntityId,@Action,@BeforeJson,@ChangedAt)",b.Audit,tx);
         await c.ExecuteAsync("INSERT INTO settings VALUES('ledger_id',@LedgerId)",b,tx);

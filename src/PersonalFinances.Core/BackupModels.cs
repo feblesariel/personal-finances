@@ -57,8 +57,8 @@ public sealed record BackupImportManifest(string Key, string Batch, string Sourc
     ImmutableArray<BackupImportLine> Lines, DateTimeOffset ImportedAt);
 public sealed record BackupDocument
 {
-    [JsonRequired] public int BackupFormatVersion { get; init; } = 4;
-    [JsonRequired] public int DatabaseSchemaVersion { get; init; } = 6;
+    [JsonRequired] public int BackupFormatVersion { get; init; } = 5;
+    [JsonRequired] public int DatabaseSchemaVersion { get; init; } = 7;
     [JsonRequired] public string Application { get; init; } = "Personal Finances";
     [JsonRequired] public string ApplicationVersion { get; init; } = "";
     [JsonRequired] public Guid BackupId { get; init; } = Guid.NewGuid();
@@ -93,8 +93,8 @@ public static class BackupValidation
 
     public static void Validate(BackupDocument b)
     {
-        if(b.BackupFormatVersion is not (1 or 2 or 3 or 4))throw new RuleException("Esta versión del respaldo no es compatible. Actualizá Personal Finances para abrirlo.");
-        Require((b.BackupFormatVersion==1 && b.DatabaseSchemaVersion==3 || b.BackupFormatVersion==2 && b.DatabaseSchemaVersion==4 || b.BackupFormatVersion==3 && b.DatabaseSchemaVersion==5 || b.BackupFormatVersion==4 && b.DatabaseSchemaVersion==6),"versión de base de datos incompatible.");
+        if(b.BackupFormatVersion is not (1 or 2 or 3 or 4 or 5))throw new RuleException("Esta versión del respaldo no es compatible. Actualizá Personal Finances para abrirlo.");
+        Require((b.BackupFormatVersion==1 && b.DatabaseSchemaVersion==3 || b.BackupFormatVersion==2 && b.DatabaseSchemaVersion==4 || b.BackupFormatVersion==3 && b.DatabaseSchemaVersion==5 || b.BackupFormatVersion==4 && b.DatabaseSchemaVersion==6 || b.BackupFormatVersion==5 && b.DatabaseSchemaVersion==7),"versión de base de datos incompatible.");
         Require(b.Application=="Personal Finances"&&!string.IsNullOrWhiteSpace(b.ApplicationVersion)&&b.ApplicationVersion.Length<=160,"aplicación de origen desconocida.");
         Require(b.BackupId!=Guid.Empty&&b.CreatedAt.Year>=2020&&Guid.TryParseExact(b.LedgerId,"N",out _),"identificación incompleta.");
         Require(!b.Cards.IsDefault&&!b.Categories.IsDefault&&!b.Periods.IsDefault&&!b.Movements.IsDefault&&!b.Audit.IsDefault&&!b.Imports.IsDefault,"faltan colecciones.");

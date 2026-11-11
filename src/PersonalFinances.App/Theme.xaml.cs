@@ -11,4 +11,5 @@ public partial class Theme : ResourceDictionary
         if(box.DataContext is BackupExportEditor export){if(box.Tag?.ToString()=="Confirm")export.Confirmation=box.Password;else export.Password=box.Password;}
         if(box.DataContext is BackupRestoreEditor restore)restore.Password=box.Password;
     }
-}
+    private void ServiceDateError(object sender,DatePickerDateValidationErrorEventArgs e){e.ThrowException=false;if(sender is DatePicker {DataContext:ServiceEntryEditor vm} picker)vm.DateValidation(picker.Tag.ToString()!,false);}
+    private void ServiceDateFocus(object sender,RoutedEventArgs e){if(sender is DatePicker {DataContext:ServiceEntryEditor vm} picker)vm.DateValidation(picker.Tag.ToString()!,string.IsNullOrWhiteSpace(picker.Text)||DateTime.TryParse(picker.Text,PersonalFinances.Core.Money.Ar,System.Globalization.DateTimeStyles.None,out _));}}

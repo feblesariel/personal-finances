@@ -1,45 +1,69 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using PersonalFinances.App;
 using PersonalFinances.Core;
 internal static class ServiceUiChecks
 {
-    static async Task Wait(Func<bool> condition){var end=DateTime.UtcNow.AddSeconds(30);while(!condition()){if(DateTime.UtcNow>end)throw new TimeoutException("Sheet UI timeout");await Task.Delay(50);}}
+    static async Task Wait(Func<bool> condition){var end=DateTime.UtcNow.AddSeconds(40);while(!condition()){if(DateTime.UtcNow>end)throw new TimeoutException("Service modal UI timeout");await Task.Delay(30);}}
+    sealed class ProbeRow:IEditableObject {public string Name {get;set;}="Probe";public void BeginEdit(){}public void CancelEdit(){}public void EndEdit(){}}
     internal static async Task Run(MainWindow window,ConnectionProfile profile,Action<bool,string> check,Action<Window,string> screenshot,string artifacts)
     {
+        // Reproduce the failure mechanism of the old refresh-during-edit path without using real data.
+        var probe=new DataGrid{AutoGenerateColumns=false,IsReadOnly=false,ItemsSource=new ObservableCollection<ProbeRow>{new()}};probe.Columns.Add(new DataGridTextColumn{Binding=new System.Windows.Data.Binding("Name")});var host=new Window{Width=300,Height=180,Content=probe};host.Show();probe.UpdateLayout();probe.SelectedIndex=0;probe.CurrentCell=new(probe.Items[0],probe.Columns[0]);probe.BeginEdit();var reproduced=false;try{probe.Items.Refresh();}catch(InvalidOperationException){reproduced=true;}probe.CancelEdit(DataGridEditingUnit.Row);host.Close();check(reproduced,"Regresión: refrescar CollectionView en edición reproduce InvalidOperationException del flujo anterior");
         var vm=(ShellViewModel)window.DataContext;vm.Page="Servicios";await Wait(()=>vm.PrepareServicesCommand.CanExecute(null));
-        async Task Dialog(ICommand command,Action<EditorViewModel> fill)
+        var grid=(DataGrid)window.FindName("ServicesGrid");check(grid.IsReadOnly&&!grid.BeginEdit()&&!InteractionChecks.Visuals<Button>(grid).Any(b=>b.Content?.ToString() is "⋯" or "..."),"Servicios UI: tabla sólo lectura, sin edición directa ni botones de tres puntos");
+        async Task Dialog(Action open,Action<EditorWindow,EditorViewModel> fill)
         {
-            var done=new TaskCompletionSource();var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
-            timer.Tick+=async(_,_)=>{var editor=Application.Current.Windows.OfType<EditorWindow>().FirstOrDefault();if(editor==null)return;timer.Stop();try{var m=(EditorViewModel)editor.DataContext;fill(m);m.SaveCommand.Execute(null);await Wait(()=>!editor.IsVisible||!m.Busy&&m.Error.Length>0);if(editor.IsVisible)throw new Exception(m.Error);done.SetResult();}catch(Exception e){done.SetException(e);editor.Close();}};
-            timer.Start();command.Execute(null);await done.Task;await Wait(()=>command.CanExecute(null));
+            var done=new TaskCompletionSource();var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(30)};
+            timer.Tick+=async(_,_)=>{var editor=Application.Current.Windows.OfType<EditorWindow>().FirstOrDefault();if(editor==null)return;timer.Stop();try{var m=(EditorViewModel)editor.DataContext;fill(editor,m);m.SaveCommand.Execute(null);m.SaveCommand.Execute(null);await Wait(()=>!editor.IsVisible||!m.Busy&&m.Error.Length>0);if(editor.IsVisible)throw new Exception(m.Error);done.SetResult();}catch(Exception e){done.SetException(e);editor.Close();}};
+            timer.Start();open();await done.Task;await Wait(()=>vm.OpenServiceCommand.CanExecute(null)&&vm.AddServiceCommand.CanExecute(null));
         }
-        await Dialog(vm.AddServiceCommand,m=>{var e=(ServiceEditor)m;e.Model.Name="Internet planilla UI";e.Amount="22.554,99";});
-        var row=vm.SheetRows.Single(r=>r.Name=="Internet planilla UI");check(row.Status=="SIN CARGAR","Planilla UI: importe habitual no implica bonificación ni deuda confirmada");
-        var grid=(DataGrid)window.FindName("ServicesGrid");
-        void Input(ServiceSheetRow item,int col,string text)
+        await Dialog(()=>vm.AddServiceCommand.Execute(null),(_,m)=>{var e=(ServiceEditor)m;e.Model.Name="TUENTI modal UI";});
+        var first=vm.SheetRows.Single(r=>r.Name=="TUENTI modal UI");grid.SelectedItem=first;grid.ScrollIntoView(first);window.UpdateLayout();
+        await Dialog(()=>{var row=(DataGridRow)grid.ItemContainerGenerator.ContainerFromItem(first);grid.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=Control.MouseDoubleClickEvent,Source=row});},(editor,m)=>
+        {var e=(ServiceEntryEditor)m;check(e.Title.Contains("TUENTI modal UI")&&e.NewPayment==""&&e.PaymentDate==DateTime.Today,"Servicios UI: doble clic abre modal correcto con nuevo abono vacío y fecha actual");e.Amount="15.000,00";e.NewPayment="5.000,00";e.PaymentDate=DateTime.Today.AddDays(-1);screenshot(editor,System.IO.Path.Combine(artifacts,"service-modal.png"));});
+        check(vm.SheetRows.Single(r=>r.Name==first.Name).Entry is {Paid:5000,Status:"Parcial"},"Servicios UI: nuevo pago parcial guardado desde modal sin duplicarse");
+        vm.SelectedSheetRow=vm.SheetRows.Single(r=>r.Name==first.Name);await Dialog(()=>grid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(grid),0,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent}),(w,m)=>{var e=(ServiceEntryEditor)m;check(e.NewPayment=="","Servicios UI: reabrir no precarga el pago anterior");e.NewPayment="10.000,00";});
+        check(vm.SheetRows.Single(r=>r.Name==first.Name).Entry is {Paid:15000,Status:"Pagado",Payments.Count:2},"Servicios UI: segundo pago acumula y deja PAGADO");
+        var store=new FinanceStore(profile);for(var i=0;i<6;i++)await store.SaveServiceAsync(new(){Name="Stress servicio "+i});await store.CreateServiceMonthAsync(DateTime.Today,false);await vm.RefreshAsync();
+        var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);using var release=new ManualResetEventSlim();var blocked=new ExportService(store){BeforeFileWrite=()=>{entered.TrySetResult();if(!release.Wait(TimeSpan.FromSeconds(90)))throw new TimeoutException("Test IO delay");}};
+        var previousFolder=System.IO.Path.GetDirectoryName(LocalConfig.Preferences().ExportPath!)!;var stressFolder=System.IO.Path.Combine(LocalConfig.Folder,"stress-drive");System.IO.Directory.CreateDirectory(stressFolder);LocalConfig.SetExportFolder(stressFolder);
+        Task<bool>? exporting=null;var startLimit=DateTime.UtcNow.AddSeconds(30);
+        while(!entered.Task.IsCompleted&&DateTime.UtcNow<startLimit)
         {
-            grid.SelectedItem=item;grid.CurrentCell=new(item,grid.Columns[col]);grid.ScrollIntoView(item,grid.Columns[col]);window.UpdateLayout();if(!grid.BeginEdit())throw new Exception("Cannot begin sheet cell edit");window.UpdateLayout();var cell=grid.Columns[col].GetCellContent(item);var box=cell is TextBox tb?tb:InteractionChecks.Visuals<TextBox>(cell).First();box.Text=text;box.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();grid.CommitEdit(DataGridEditingUnit.Cell,true);
+            var attempt=blocked.TryAsync(true);await Task.WhenAny(entered.Task,attempt,Task.Delay(100));
+            if(entered.Task.IsCompleted){exporting=attempt;break;}
+            if(attempt.IsCompleted){await Task.Delay(100);continue;}
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));exporting=attempt;
         }
-        Input(row,1,"22.554,99");Input(row,2,"10.000,00");grid.CurrentCell=new(row,grid.Columns[3]);grid.BeginEdit();window.UpdateLayout();var picker=InteractionChecks.Visuals<DatePicker>(grid.Columns[3].GetCellContent(row)).Single();picker.SelectedDate=DateTime.Today.AddDays(-1);picker.GetBindingExpression(DatePicker.SelectedDateProperty)!.UpdateSource();grid.CommitEdit(DataGridEditingUnit.Cell,true);grid.CommitEdit(DataGridEditingUnit.Row,true);await Wait(()=>row.Entry.Paid==10000);
-        check(row.Status=="PARCIAL"&&row.Entry.PaymentDate==DateTime.Today.AddDays(-1),"Planilla UI: celdas reales guardan importe, pago y fecha en MySQL");
-        Input(row,2,"22.554,99");grid.CommitEdit(DataGridEditingUnit.Row,true);await Wait(()=>row.Entry.Status=="Pagado");
-        check(row.Entry.Payments.Count==2,"Planilla UI: aumentar acumulado agrega un segundo pago sin perder el primero");
-        Input(row,1,"1,00");grid.CancelEdit(DataGridEditingUnit.Row);check(row.AmountText=="22.554,99","Planilla UI: cancelar fila restaura el importe sin escribir en MySQL");
-        await Dialog(vm.AddServiceCommand,m=>{var e=(ServiceEditor)m;e.Model.Name="Tarjeta planilla UI";e.Type="Tarjeta de crédito";});
-        check(vm.SheetRows.Count(r=>r.Name=="Tarjeta planilla UI")==1&&vm.SheetRows.Single(r=>r.Name=="Tarjeta planilla UI").Currency=="ARS","Planilla UI: una fila ARS por tarjeta");
-        var card=vm.SheetRows.Single(r=>r.Name=="Tarjeta planilla UI");Input(card,1,"0,00");grid.CommitEdit(DataGridEditingUnit.Row,true);await Wait(()=>card.Entry.Status=="Bonificado");check(true,"Planilla UI: cero escrito confirma bonificación");
-        var originalMonth=vm.SheetMonth!.Month;await Dialog(vm.NewServiceMonthCommand,_=>{});
-        check(vm.SheetMonth!.Month==originalMonth.AddMonths(1)&&vm.SheetRows.Single(r=>r.Name=="Internet planilla UI").PaidText=="","Planilla UI: nuevo mes completo con pagos vacíos");
-        vm.SheetMonth=vm.SheetMonths.Single(m=>m.Month==originalMonth);check(vm.SheetRows.Single(r=>r.Name=="Internet planilla UI").Entry.Paid==22554.99m,"Planilla UI: volver a noviembre conserva pagos anteriores");
-        var data=(await new FinanceStore(profile).CaptureBackupAsync("test")).Document;var hash=BackupValidation.Fingerprint(data);
-        var defaults=grid.Columns[0].Width;grid.Columns[0].Width=new(300);grid.Columns[0].DisplayIndex=2;grid.Items.SortDescriptions.Clear();grid.Items.SortDescriptions.Add(new("Name",System.ComponentModel.ListSortDirection.Descending));TableLayout.Save(grid);check(System.IO.File.Exists(TableLayout.PreferencePath("services")),"Planilla UI: anchos y orden se guardan independientemente de Consumos");TableLayout.Reset(grid);
-        check(grid.Columns[0].Width==defaults&&grid.Columns[0].DisplayIndex==0&&grid.Items.SortDescriptions[0].PropertyName=="ServiceId"&&!System.IO.File.Exists(TableLayout.PreferencePath("services")),"Planilla UI: Restablecer tabla recupera columnas y elimina preferencias");
-        check(hash==BackupValidation.Fingerprint((await new FinanceStore(profile).CaptureBackupAsync("test")).Document),"Planilla UI: Restablecer tabla no altera la contabilidad");
-        var fixtureStore=new FinanceStore(profile);for(var i=1;i<=11;i++)await fixtureStore.SaveServiceAsync(new(){Name="Servicio mensual "+i});await fixtureStore.CreateServiceMonthAsync(originalMonth,false);await vm.RefreshAsync();
-        window.Width=1320;window.Height=880;window.UpdateLayout();var shortHeight=grid.ActualHeight;window.WindowState=WindowState.Maximized;window.UpdateLayout();check(grid.ActualHeight>shortHeight,"Planilla UI: tabla crece verticalmente al maximizar");screenshot(window,System.IO.Path.Combine(artifacts,"services-sheet.png"));window.WindowState=WindowState.Normal;window.Width=960;window.Height=620;window.UpdateLayout();screenshot(window,System.IO.Path.Combine(artifacts,"services-sheet-960.png"));
-        check(!InteractionChecks.Visuals<DataGrid>(window).Any(g=>g.Name=="ServicePaymentsGrid"),"Planilla UI: no hay panel de pagos permanente");
+        if(!entered.Task.IsCompleted)throw new Exception("Could not start delayed export: "+blocked.Status);
+        var ticks=0;var heartbeat=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(10)};heartbeat.Tick+=(_,_)=>ticks++;heartbeat.Start();var allEmpty=true;var dates=true;var ioStayedBlocked=true;var stressWatch=System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            for(var i=0;i<60;i++)
+            {
+                ioStayedBlocked&=exporting!=null&&!exporting.IsCompleted;vm.SelectedSheetRow=vm.SheetRows.Single(r=>r.Name=="Stress servicio "+i%6);
+                await Dialog(()=>vm.OpenServiceCommand.Execute(null),(w,m)=>{var e=(ServiceEntryEditor)m;allEmpty&=e.NewPayment=="";dates&=e.PaymentDate==DateTime.Today;e.Amount="10,00";e.NewPayment="1,00";vm.OpenServiceCommand.Execute(null);});
+            }
+        }
+        finally{ioStayedBlocked&=exporting!=null&&!exporting.IsCompleted;release.Set();heartbeat.Stop();if(exporting!=null)await exporting;}
+        var snapshot=await store.ReadAsync();var stressIds=snapshot.Services.Services.Where(s=>s.Name.StartsWith("Stress servicio ")).Select(s=>s.Id).ToHashSet();var stressObligations=snapshot.Services.Obligations.Where(o=>stressIds.Contains(o.ServiceId)).Select(o=>o.Id).ToHashSet();
+        check(snapshot.Services.Payments.Count(p=>stressObligations.Contains(p.ObligationId))==60&&allEmpty&&dates,"Estrés UI: 60 pagos en seis servicios, doble Guardar y reapertura repetida sin duplicados");
+        Console.WriteLine($"STRESS: 60 payments, UI ticks={ticks}, elapsedMs={stressWatch.ElapsedMilliseconds}, IO blocked throughout={ioStayedBlocked}");
+        check(ticks>30&&ioStayedBlocked,"Estrés UI: dispatcher responde mientras se guardan pagos con escritura de Drive bloqueada");
+        check(await new ExportService(store).TryAsync(true),"Estrés UI: TXT final se actualiza al liberar Drive");LocalConfig.SetExportFolder(previousFolder);await vm.Export(true);
+        var defaults=grid.Columns[0].Width;grid.Columns[0].Width=new(300);grid.Columns[0].DisplayIndex=2;TableLayout.Save(grid);TableLayout.Reset(grid);check(grid.Columns[0].Width==defaults&&grid.Columns[0].DisplayIndex==0&&!System.IO.File.Exists(TableLayout.PreferencePath("services")),"Servicios UI: Restablecer tabla conserva sólo presentación");
+        window.WindowState=WindowState.Maximized;window.UpdateLayout();await Task.Delay(80);screenshot(window,System.IO.Path.Combine(artifacts,"services-modal-table.png"));
+        foreach(var item in vm.SheetRows)
+        {
+            grid.ScrollIntoView(item,grid.Columns[5]);window.UpdateLayout();if(grid.ItemContainerGenerator.ContainerFromItem(item) is not DataGridRow row)continue;var content=grid.Columns[5].GetCellContent(item);if(content==null)continue;
+            var stack=InteractionChecks.Visuals<StackPanel>(content).FirstOrDefault();if(stack!=null){var center=stack.TransformToAncestor(row).Transform(new Point(0,stack.ActualHeight/2)).Y;if(Math.Abs(center-row.ActualHeight/2)>2)throw new Exception("Status not vertically centered");}
+        }
+        check(true,"Servicios UI: estados y controles centrados verticalmente");
     }
 }

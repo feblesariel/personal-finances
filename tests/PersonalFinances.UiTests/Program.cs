@@ -26,7 +26,7 @@ internal static class Program
         app.Run();return exitCode;
     }
     private static void Check(bool ok,string label){if(!ok)throw new Exception("FAIL: "+label);results.Add(label);Console.WriteLine("PASS UI: "+label);}
-    private static async Task Wait(Func<bool> predicate,int ms=150000){var end=DateTime.UtcNow.AddMilliseconds(ms);while(!predicate()){if(DateTime.UtcNow>end)throw new TimeoutException("UI condition timeout");await Task.Delay(60);}}
+    private static async Task Wait(Func<bool> predicate,int ms=150000){var end=DateTime.UtcNow.AddMilliseconds(ms);while(true){try{if(predicate())return;}catch(System.IO.IOException){/* Atomic TXT replacement can briefly own the file. */}if(DateTime.UtcNow>end)throw new TimeoutException("UI condition timeout");await Task.Delay(60);}}
     private static List<T> Visuals<T>(DependencyObject root) where T:DependencyObject
     {
         var result=new List<T>();for(var i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var child=VisualTreeHelper.GetChild(root,i);if(child is T t)result.Add(t);result.AddRange(Visuals<T>(child));}return result;
