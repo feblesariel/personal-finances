@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PersonalFinances.App/PersonalFinances.App.csproj" />
+    <Project Path="src/PersonalFinances.Core/PersonalFinances.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PersonalFinances.Tests/PersonalFinances.Tests.csproj" />
+    <Project Path="tests/PersonalFinances.UiTests/PersonalFinances.UiTests.csproj" />
+  </Folder>
+</Solution>
