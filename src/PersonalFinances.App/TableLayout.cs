@@ -151,7 +151,7 @@ public static class TableLayout
             if(applying)return;
             try
             {
-                var layout=Capture();applying=true;try{UpdateChoice(layout.Sort);}finally{applying=false;}
+                var layout=Capture();if(Path.GetFileNameWithoutExtension(path)=="services")LocalConfig.UpdatePreferences(p=>p with{ServiceSort=string.Join(";",layout.Sort.Select(s=>s.Property+":"+s.Direction))});applying=true;try{UpdateChoice(layout.Sort);}finally{applying=false;}
                 if(JsonSerializer.Serialize(layout)==JsonSerializer.Serialize(defaults)){if(File.Exists(path))File.Delete(path);return;}
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);var temp=path+".tmp";
                 File.WriteAllText(temp,JsonSerializer.Serialize(layout));File.Move(temp,path,true);

@@ -70,6 +70,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
             }
             await MigrateServices(c);
             await MigrateFlexibleServices(c);
+            await MigrateServiceSheet(c);
         }
         finally
         {

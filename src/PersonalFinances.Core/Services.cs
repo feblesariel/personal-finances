@@ -25,6 +25,7 @@ public sealed record ServiceObligation
     public int ServiceId { get; set; }
     public DateTime Period { get; set; }
     public DateTime? Due { get; set; }
+    public bool AmountConfirmed {get;set;}=true;
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "ARS";
     public decimal? Minimum { get; set; }
@@ -47,6 +48,7 @@ public sealed record ServicePayment
 }
 public sealed record ServiceLedger(List<RecurringService> Services,List<ServiceObligation> Obligations,List<ServicePayment> Payments)
 {
+    public List<DateTime> Months {get;init;}=[];
     public static ServiceLedger Empty => new([],[],[]);
     public IEnumerable<ServiceRow> Rows(DateTime today) => Obligations.Select(o => new ServiceRow(Services.Single(s=>s.Id==o.ServiceId),o,Payments.Where(p=>p.ObligationId==o.Id).ToList(),today));
 }
@@ -57,8 +59,8 @@ public sealed record ServiceRow(RecurringService Service,ServiceObligation Oblig
     public string PeriodLabel => Obligation.Period.ToString(Service.Frequency=="Anual"?"yyyy":"MMMM yyyy",Money.Ar);
     public decimal Paid => Payments.Where(p=>!p.Voided).Sum(p=>p.Amount);
     public decimal Balance => Obligation.Amount-Paid;
-    public bool Overdue => Balance>0 && Obligation.Due is {} due && due.Date<Today.Date;
-    public string BaseStatus => Obligation.Amount==0?"Bonificado":Balance==0?"Pagado":Paid>0?"Pago parcial":"Pendiente";
+    public bool Overdue => Obligation.AmountConfirmed&&Balance>0 && Obligation.Due is {} due && due.Date<Today.Date;
+    public string BaseStatus => !Obligation.AmountConfirmed?"Sin cargar":Obligation.Amount==0?"Bonificado":Balance==0?"Pagado":Paid>0?"Pago parcial":"Pendiente";
     public string Status => BaseStatus+(Overdue?" · Vencido":"")+(Obligation.Minimum is >0 && Paid>=Obligation.Minimum?" · Mínimo cubierto":"");
     public string AmountLabel => Money.Format(Obligation.Amount,Obligation.Currency);
     public string PaidLabel => Money.Format(Paid,Obligation.Currency);
@@ -81,6 +83,7 @@ public static class ServiceRules
     public static void Validate(ServiceObligation o,RecurringService s,decimal paid)
     {
         Require(DateValid(o.Period)&&o.Period.Day==1&&(o.Due==null||DateValid(o.Due.Value))&&MoneyValid(o.Amount)&&o.Amount>=paid&&o.Currency is "ARS" or "USD","Fecha o importe inválido. El total debe cubrir los pagos existentes.");
+        Require(o.AmountConfirmed||o.Amount==0&&paid==0,"Un importe sin cargar no puede tener cargos ni pagos.");
         Require(o.Minimum==null||s.Type=="Tarjeta de crédito"&&MoneyValid(o.Minimum.Value)&&o.Minimum<=o.Amount,"El mínimo debe corresponder a una tarjeta y no superar el total.");
         Require((o.Installment==null&&o.Installments==null)||(o.Installment is >0&&o.Installments>=o.Installment),"Completá número y total de cuotas válidos.");
         Require(o.Notes!=null&&o.Notes.Length<=4000&&o.Version>0,"Observaciones inválidas.");

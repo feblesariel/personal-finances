@@ -36,7 +36,7 @@ internal static class BackupTests
             var obligation=new ServiceObligation{ServiceId=svc.Id,Period=new(2026,11,1),Due=new(2026,11,30),Amount=1000,Minimum=100,Installment=5,Installments=24,Notes="Cuota histórica"};obligation.Id=await source.SaveObligationAsync(obligation);
             await source.SaveServicePaymentAsync(new(){ObligationId=obligation.Id,Amount=100,Notes="Mínimo",Method="VISA"});
             await source.SaveServicePaymentAsync(new(){ObligationId=obligation.Id,Amount=50});
-            await source.SaveObligationAsync(obligation with{Id=0,Currency="USD",Amount=20,Minimum=null,Due=null});
+            await source.SaveObligationAsync(obligation with{Id=0,Currency="USD",Amount=0,AmountConfirmed=false,Minimum=null,Due=null});
             var sourceService=new BackupService(source,"1.4.0-test");var targetService=new BackupService(target,"1.4.0-test");
             var path=Path.Combine(temp,"transferencia.pfinance");var exported=await sourceService.ExportAsync(path,Password);
             var decoded=await BackupFile.ReadAsync(path,Password);var fingerprint=BackupValidation.Fingerprint(exported);
@@ -68,7 +68,7 @@ internal static class BackupTests
             check(BackupValidation.Fingerprint(await BackupFile.ReadAsync(prepared.SafetyBackupPath,Password))==prepared.DestinationFingerprint,"Copia de seguridad previa cifrada, descifrada y verificada");
             await Reject(()=>targetService.RestoreAsync(prepared,false),"Sin confirmación explícita no se restaura");
             var result=await targetService.RestoreAsync(prepared,true);var restored=await target.CaptureBackupAsync("test");
-            check(restored.Document.Services.Count==1&&restored.Document.ServiceObligations.Count==2&&restored.Document.ServiceObligations[0].Installment==5&&restored.Document.Services[0].UsualAmountUsd==20&&restored.Document.ServiceObligations.Single(o=>o.Currency=="USD").Due==null&&restored.Document.ServicePayments.Count==2&&restored.Document.ServicePayments.Sum(p=>p.Amount)==150,"Servicios: respaldo y restauración entre bases conserva IDs, cuotas, mínimo y todos los pagos");
+            check(restored.Document.Services.Count==1&&restored.Document.ServiceObligations.Count==2&&restored.Document.ServiceObligations[0].Installment==5&&restored.Document.Services[0].UsualAmountUsd==20&&restored.Document.ServiceObligations.Single(o=>o.Currency=="USD").Due==null&&!restored.Document.ServiceObligations.Single(o=>o.Currency=="USD").AmountConfirmed&&restored.Document.ServicePayments.Count==2&&restored.Document.ServicePayments.Sum(p=>p.Amount)==150,"Servicios: respaldo y restauración entre bases conserva IDs, cuotas, mínimo y todos los pagos");
             check(fingerprint==BackupValidation.Fingerprint(restored.Document),"Importación en base nueva reconstruye exactamente todas las entidades y relaciones");
             check(restored.Document.Movements.Where(m=>m.DeletedAt==null&&m.Currency=="ARS").Sum(m=>m.Refund?-m.Amount:m.Amount)==10679.11m&&restored.Document.Movements.Where(m=>m.DeletedAt==null&&m.Currency=="USD").Sum(m=>m.Amount)==45.49m,"Totales exactos antes/después, ARS/USD y reintegros separados");
             check(restored.Document.Movements.Single(m=>m.Id==original.Id).Notes==original.Notes&&restored.Document.Movements.Any(m=>m.ManualPeriod&&m.Date<new DateTime(2026,9,1)),"Observaciones, fechas e imputaciones históricas manuales preservadas");

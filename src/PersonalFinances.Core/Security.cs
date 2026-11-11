@@ -11,7 +11,7 @@ public sealed record ConnectionProfile(string Host,uint Port,string User,string 
     [JsonIgnore] public string ConnectionString=>new MySqlConnectionStringBuilder{Server=Host,Port=Port,UserID=User,Password=Password,Database=Database,ConnectionTimeout=5,DefaultCommandTimeout=30,AllowPublicKeyRetrieval=Host is "localhost" or "127.0.0.1",SslMode=MySqlSslMode.Preferred}.ConnectionString;
     [JsonIgnore] public string Identity=>Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{Host}|{Port}|{User}|{Database}")));
 }
-public sealed record AppPreferences(string? ExportPath=null,bool LegacyExportPathMigrated=false,long? ExportedRevision=null,string? ExportedConnection=null);
+public sealed record AppPreferences(string? ExportPath=null,bool LegacyExportPathMigrated=false,long? ExportedRevision=null,string? ExportedConnection=null,string ServiceSort="ServiceId:Ascending",string? ExportedServiceSort=null);
 public static class LocalConfig
 {
     // In-process injection isolates test profiles; the installed app uses the Windows user profile.

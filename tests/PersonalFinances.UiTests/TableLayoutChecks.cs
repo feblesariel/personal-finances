@@ -21,7 +21,7 @@ internal static class TableLayoutChecks
     {
         var vm=(ShellViewModel)window.DataContext;vm.Page="Consumos";window.UpdateLayout();
         var grids=InteractionChecks.Visuals<DataGrid>(window);var history=History(window);
-        check(grids.Count==7&&grids.Count(g=>TableLayout.GetKey(g)!=null)==1&&TableLayout.GetKey(history)=="history","Solo Consumos conserva preferencias personalizadas de columnas");
+        check(grids.Count==6&&grids.Count(g=>TableLayout.GetKey(g)!=null)==2&&TableLayout.GetKey(history)=="history","Consumos y Servicios tienen preferencias independientes de columnas");
         check(grids.Where(g=>g!=history&&g.Name!="ServicesGrid").All(g=>!g.CanUserResizeColumns&&!g.CanUserReorderColumns&&!g.CanUserSortColumns),"Tablas sencillas de consulta sin personalización innecesaria");
         var defaults=Layout(history);var before=await store.ReadAsync();var revision=before.Revision;var data=JsonSerializer.Serialize(before.Movements);
         history.Columns[0].Width=new(240);history.Columns[1].DisplayIndex=0;history.Columns[2].Visibility=Visibility.Collapsed;history.FrozenColumnCount=1;history.RowHeight=48;
@@ -38,7 +38,7 @@ internal static class TableLayoutChecks
         check((await store.ReadAsync()).Revision==revision&&JsonSerializer.Serialize((await store.ReadAsync()).Movements)==data,"Cambiar o restaurar columnas no modifica MySQL");
         window.Close();window=new(profile);app.MainWindow=window;window.Show();vm=(ShellViewModel)window.DataContext;await Wait(()=>vm.Ready&&vm.Tiles.Count==2);vm.Page="Consumos";window.UpdateLayout();history=History(window);
         check(Layout(history)==defaults,"Restauración de Consumos persistente tras cerrar y reabrir");
-        check(InteractionChecks.Visuals<Button>(window).Count(b=>b.Content?.ToString()=="Restablecer tabla")==1,"Un solo botón Restablecer tabla en toda la ventana");
+        check(InteractionChecks.Visuals<Button>(window).Count(b=>b.Content?.ToString()=="Restablecer tabla"&&b.IsVisible)==1,"Un solo botón Restablecer tabla visible en Consumos");
         vm.Page="Estadísticas";window.UpdateLayout();check(!InteractionChecks.Visuals<TextBlock>(window).Any(t=>t.Text=="Evolución por período"),"Estadísticas conserva la eliminación del bloque de evolución");
         vm.Page="Consumos";window.Width=960;window.Height=620;window.UpdateLayout();
         var search=InteractionChecks.Visuals<TextBox>(window).Single(t=>t.IsVisible&&System.Windows.Automation.AutomationProperties.GetName(t)=="Buscar movimientos");

@@ -23,6 +23,9 @@ public sealed class Dialogs : IDialogs
     {
         var editor=new EditorWindow{DataContext=vm,Title=vm.Title,Owner=Application.Current.Windows.OfType<Window>().LastOrDefault(w=>w.IsActive)??Application.Current.MainWindow};
         if(vm is ImportEditor)editor.Width=1080;
+        if(vm is ServicePaymentsEditor){editor.Width=820;editor.Height=580;}
+        if(vm is ServiceEditor)editor.Height=660;
+        if(vm is ServiceMonthEditor){editor.Width=490;editor.Height=420;}
         bool? pending=null;
         void RequestClose(bool result){if(vm.Busy)pending=result;else editor.DialogResult=result;}
         void OnChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e)

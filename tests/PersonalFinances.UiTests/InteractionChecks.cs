@@ -41,7 +41,7 @@ internal static class InteractionChecks
         }
         CheckAlignment();
         foreach(var button in nav){button.Command.Execute(button.CommandParameter);window.UpdateLayout();check(vm.Page==button.Route&&nav.Count(n=>n.IsActive)==1&&button.IsActive,"Navegación y selección activa uniformes: "+button.Route);}
-        check(Visuals<Button>(window).Count(b=>b.Content?.ToString()=="Restablecer tabla")==1,"Restablecer tabla aparece únicamente en Consumos");
+        check(Visuals<Button>(window).Count(b=>b.Content?.ToString()=="Restablecer tabla")==2,"Restablecer tabla disponible en Consumos y Servicios");
         check(!Visuals<TextBlock>(window).Any(t=>t.Text=="Importar tu TXT anterior")&&!Visuals<Button>(window).Any(b=>b.Content?.ToString()=="Seleccionar TXT y revisar"),"Sección de importación retirada completamente de Configuración");
         vm.Page="Consumos";vm.ClearFiltersCommand.Execute(null);window.Activate();window.UpdateLayout();
         var all=vm.History.Count;var search=Visuals<TextBox>(window).Single(t=>t.IsVisible&&AutomationProperties.GetName(t)=="Buscar movimientos");

@@ -20,10 +20,10 @@ public sealed partial class ShellViewModel : Observable
 {
     private readonly IDialogs dialogs;private readonly ConnectionProfile? suppliedProfile;private FinanceStore? store;private ExportService? exporter;
     private Snapshot snapshot=new([],[],[],[],new());private bool ready;private string notice="Conectando con MySQL…";private string sync="Resumen pendiente";private string page="Inicio";
-    public string Page {get=>page;set{if(Set(ref page,value)){Changed(nameof(Subtitle));Changed(nameof(PageNewLabel));Changed(nameof(PageNewCommand));if(value=="Servicios"){FilterServices();if(Ready)PrepareServicesCommand.Execute(null);}}}}
+    public string Page {get=>page;set{if(Set(ref page,value)){Changed(nameof(Subtitle));Changed(nameof(PageNewLabel));Changed(nameof(PageNewCommand));if(value=="Servicios"){if(Ready)PrepareServicesCommand.Execute(null);else RefreshSheetRows();}}}}
     public string PageNewLabel=>Page=="Servicios"?"+ Agregar servicio":"+ Nuevo consumo";
     public ICommand PageNewCommand=>Page=="Servicios"?AddServiceCommand:NewCommand;
-    public string Subtitle=>Page switch{"Inicio"=>"Tus tarjetas, en un vistazo.","Servicios"=>"Tus obligaciones y pagos, en un solo lugar.","Consumos"=>"Todo tu historial, siempre a mano.","Estadísticas"=>"Entendé en qué estás gastando.","Tarjetas y períodos"=>"Cada tarjeta tiene sus propias fechas.",_=>"Datos locales. Un resumen siempre disponible en Drive."};
+    public string Subtitle=>Page switch{"Inicio"=>"Tus tarjetas, en un vistazo.","Servicios"=>"Tu planilla mensual de pagos.","Consumos"=>"Todo tu historial, siempre a mano.","Estadísticas"=>"Entendé en qué estás gastando.","Tarjetas y períodos"=>"Cada tarjeta tiene sus propias fechas.",_=>"Datos locales. Un resumen siempre disponible en Drive."};
     public string Today=>DateTime.Today.ToString("dddd d 'de' MMMM",Money.Ar);
     public bool Ready {get=>ready;set=>Set(ref ready,value);}public string Notice {get=>notice;set=>Set(ref notice,value);}public string Sync {get=>sync;set=>Set(ref sync,value);}
     public string Connection=>store==null?"Sin conexión configurada":$"MySQL local · {store.Profile.Host}:{store.Profile.Port} · {store.Profile.Database} · {store.Profile.User}";
@@ -68,7 +68,7 @@ public sealed partial class ShellViewModel : Observable
     public ICommand ReconfigureCommand {get;}public ICommand TestConnectionCommand {get;}
     public ICommand ClearStatisticsFiltersCommand {get;}
     public ICommand BackupExportCommand {get;}public ICommand BackupImportCommand {get;}
-    private AsyncCommand Command(Func<Task> action)=>new(action,e=>Notice=LocalConfig.Friendly(e));
+    private AsyncCommand Command(Func<Task> action)=>new(action,e=>{Notice=LocalConfig.Friendly(e);if(Page=="Servicios"){SheetFeedback=Notice;Changed(nameof(SheetFeedback));}});
     public ShellViewModel(IDialogs dialogs,ConnectionProfile? profile=null)
     {
         this.dialogs=dialogs;suppliedProfile=profile;InitializeServiceCommands();NavigateCommand=new RelayCommand(p=>Page=p?.ToString()??"Inicio");NewCommand=Command(()=>EditMovement(null));EditCommand=Command(()=>SelectedMovement==null?Task.CompletedTask:EditMovement(SelectedMovement));DeleteCommand=Command(Delete);

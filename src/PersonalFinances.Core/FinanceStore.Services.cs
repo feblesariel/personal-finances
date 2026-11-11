@@ -5,9 +5,9 @@ namespace PersonalFinances.Core;
 public sealed partial class FinanceStore
 {
     private const string ServiceSql="SELECT id,name,type,frequency,currency,usual_amount UsualAmount,usual_amount_usd UsualAmountUsd,due_day DueDay,due_month DueMonth,notes,active,card_id CardId,version FROM recurring_services";
-    private const string ObligationSql="SELECT id,service_id ServiceId,period,due,amount,currency,minimum,installment,installments,notes,version FROM service_obligations";
+    private const string ObligationSql="SELECT id,service_id ServiceId,period,due,amount,amount_confirmed AmountConfirmed,currency,minimum,installment,installments,notes,version FROM service_obligations";
     private const string PaymentSql="SELECT id,token,obligation_id ObligationId,payment_date Date,amount,method,notes,voided,version FROM service_payments";
-    private static async Task<ServiceLedger> ReadServices(MySqlConnection c,MySqlTransaction t) => new((await c.QueryAsync<RecurringService>(ServiceSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServiceObligation>(ObligationSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServicePayment>(PaymentSql+" ORDER BY id",transaction:t)).ToList());
+    private static async Task<ServiceLedger> ReadServices(MySqlConnection c,MySqlTransaction t) => new ServiceLedger((await c.QueryAsync<RecurringService>(ServiceSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServiceObligation>(ObligationSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServicePayment>(PaymentSql+" ORDER BY id",transaction:t)).ToList()){Months=(await c.QueryAsync<DateTime>("SELECT period FROM service_months ORDER BY period",transaction:t)).ToList()};
     private static async Task MigrateServices(MySqlConnection c)
     {
         if(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations WHERE version=4")>0)return;
@@ -25,7 +25,6 @@ public sealed partial class FinanceStore
         if(s.Id==0)return await c.ExecuteScalarAsync<int>("INSERT INTO recurring_services(name,type,frequency,currency,usual_amount,usual_amount_usd,due_day,due_month,notes,active,card_id) VALUES(@Name,@Type,@Frequency,@Currency,@UsualAmount,@UsualAmountUsd,@DueDay,@DueMonth,@Notes,@Active,@CardId); SELECT LAST_INSERT_ID();",s,t);
         var old=await c.QuerySingleAsync<RecurringService>(ServiceSql+" WHERE id=@Id",s,t);
         ServiceRules.Require(old.Version==s.Version,"El servicio cambió. Actualizá antes de editar.");
-        if(old.Frequency!=s.Frequency)ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM service_obligations WHERE service_id=@Id",s,t)==0,"Con historial, conservá la periodicidad; podés desactivar este servicio y crear otro.");
         if(s.Type!="Tarjeta de crédito")ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM (SELECT period FROM service_obligations WHERE service_id=@Id GROUP BY period HAVING COUNT(*)>1) pairs",s,t)==0,"Este servicio tiene períodos en ambas monedas; conservá el tipo Tarjeta de crédito.");
         if(s.Type!="Tarjeta de crédito")ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM service_obligations WHERE service_id=@Id AND minimum IS NOT NULL",s,t)==0,"Con mínimos registrados, conservá el tipo Tarjeta de crédito.");
         await Audit(c,t,"recurring_services",s.Id,"edit",old);
@@ -54,32 +53,7 @@ public sealed partial class FinanceStore
         }
         return id;
     });
-    public async Task<int> PrepareServiceMonthAsync(DateTime month)
-    {
-        month=new(month.Year,month.Month,1);
-        static string[] Currencies(RecurringService s)=>s.Type=="Tarjeta de crédito"?["ARS","USD"]:[s.Currency];
-        static bool Matches(ServiceObligation o,RecurringService s,DateTime m)=>o.ServiceId==s.Id&&o.Period.Year==m.Year&&(s.Frequency=="Anual"||o.Period.Month==m.Month);
-        static bool Missing(ServiceLedger ledger,RecurringService s,DateTime m)=>s.Type=="Tarjeta de crédito"?Currencies(s).Any(currency=>!ledger.Obligations.Any(o=>Matches(o,s,m)&&o.Currency==currency)):!ledger.Obligations.Any(o=>Matches(o,s,m));
-        var snapshot=await ReadAsync();
-        if(!snapshot.Services.Services.Where(s=>s.Active&&(s.Frequency=="Mensual"||s.DueMonth==month.Month)).Any(s=>Missing(snapshot.Services,s,month)))return 0;
-        return await Write(async(c,t)=>
-        {
-            var ledger=await ReadServices(c,t);var count=0;
-            foreach(var s in ledger.Services.Where(s=>s.Active&&(s.Frequency=="Mensual"||s.DueMonth==month.Month)))
-            {
-                if(!Missing(ledger,s,month))continue;
-                var matches=ledger.Obligations.Where(o=>Matches(o,s,month)).ToList();
-                var proposal=ServiceRules.Propose(s,[],month);proposal.Period=matches.FirstOrDefault()?.Period??month;
-                foreach(var currency in Currencies(s))
-                {
-                    if(matches.Any(o=>o.Currency==currency))continue;
-                    await SaveObligation(c,t,proposal with{Currency=currency,Amount=currency=="USD"&&s.Type=="Tarjeta de crédito"?s.UsualAmountUsd??0:s.UsualAmount??0});
-                    count++;
-                }
-            }
-            return count;
-        });
-    }
+    public Task<int> PrepareServiceMonthAsync(DateTime month)=>CreateServiceMonthAsync(month,false);
     public Task<long> SaveObligationAsync(ServiceObligation o)=>Write((c,t)=>SaveObligation(c,t,o));
     private static async Task<long> SaveObligation(MySqlConnection c,MySqlTransaction t,ServiceObligation o)
     {
@@ -90,15 +64,18 @@ public sealed partial class FinanceStore
         ServiceRules.Require(old!=null||s.Active,"El servicio está inactivo.");
         ServiceRules.Require(old==null||old.ServiceId==o.ServiceId&&old.Period==o.Period&&old.Version==o.Version,"El período cambió o su identidad no coincide. Actualizá los datos.");
         ServiceRules.Require(old==null||old.Currency==o.Currency||await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM service_payments WHERE obligation_id=@Id",o,t)==0,"No se puede cambiar la moneda con pagos registrados.");
-        ServiceRules.Require(!await c.ExecuteScalarAsync<bool>("SELECT EXISTS(SELECT 1 FROM service_obligations WHERE service_id=@ServiceId AND id<>@Id AND (@card=0 OR currency=@Currency) AND (period=@Period OR (@annual=1 AND YEAR(period)=YEAR(@Period))))",new{o.ServiceId,o.Id,o.Period,annual=s.Frequency=="Anual",o.Currency,card=s.Type=="Tarjeta de crédito"},t),"Ya existe ese período del servicio.");
-        if(o.Id==0)return await c.ExecuteScalarAsync<long>("INSERT INTO service_obligations(service_id,period,due,amount,currency,minimum,installment,installments,notes) VALUES(@ServiceId,@Period,@Due,@Amount,@Currency,@Minimum,@Installment,@Installments,@Notes); SELECT LAST_INSERT_ID();",o,t);
+        ServiceRules.Require(!await c.ExecuteScalarAsync<bool>("SELECT EXISTS(SELECT 1 FROM service_obligations WHERE service_id=@ServiceId AND id<>@Id AND (@card=0 OR currency=@Currency) AND period=@Period)",new{o.ServiceId,o.Id,o.Period,annual=s.Frequency=="Anual",o.Currency,card=s.Type=="Tarjeta de crédito"},t),"Ya existe ese período del servicio.");
+        await c.ExecuteAsync("INSERT IGNORE INTO service_months VALUES(@Period)",o,t);
+        if(o.Id==0)return await c.ExecuteScalarAsync<long>("INSERT INTO service_obligations(service_id,period,due,amount,amount_confirmed,currency,minimum,installment,installments,notes) VALUES(@ServiceId,@Period,@Due,@Amount,@AmountConfirmed,@Currency,@Minimum,@Installment,@Installments,@Notes); SELECT LAST_INSERT_ID();",o,t);
         await Audit(c,t,"service_obligations",o.Id,"edit",old);
-        await c.ExecuteAsync("UPDATE service_obligations SET due=@Due,amount=@Amount,currency=@Currency,minimum=@Minimum,installment=@Installment,installments=@Installments,notes=@Notes,version=version+1 WHERE id=@Id",o,t);return o.Id;
+        await c.ExecuteAsync("UPDATE service_obligations SET due=@Due,amount=@Amount,amount_confirmed=@AmountConfirmed,currency=@Currency,minimum=@Minimum,installment=@Installment,installments=@Installments,notes=@Notes,version=version+1 WHERE id=@Id",o,t);return o.Id;
     }
-    public Task<long> SaveServicePaymentAsync(ServicePayment p)=>Write(async(c,t)=>
+    public Task<long> SaveServicePaymentAsync(ServicePayment p)=>Write((c,t)=>SaveServicePayment(c,t,p));
+    private static async Task<long> SaveServicePayment(MySqlConnection c,MySqlTransaction t,ServicePayment p)
     {
         ServiceRules.Require(ServiceRules.DateValid(p.Date)&&ServiceRules.MoneyValid(p.Amount)&&p.Amount>0&&ServiceRules.Methods.Contains(p.Method)&&p.Notes!=null&&p.Notes.Length<=4000&&Guid.TryParseExact(p.Token,"N",out _),"Fecha, importe o medio de pago inválido.");
         var o=await c.QuerySingleAsync<ServiceObligation>(ObligationSql+" WHERE id=@ObligationId",p,t);
+        ServiceRules.Require(o.AmountConfirmed||p.Voided,"Confirmá el importe del período antes de registrar un pago.");
         if(p.Id==0){var duplicate=await c.ExecuteScalarAsync<long?>("SELECT id FROM service_payments WHERE token=@Token",p,t);if(duplicate!=null)return duplicate.Value;}
         var old=await c.QuerySingleOrDefaultAsync<ServicePayment>(PaymentSql+" WHERE id=@Id",p,t);
         ServiceRules.Require(p.Id==0||old!=null&&!old.Voided&&old.Version==p.Version&&old.ObligationId==p.ObligationId&&old.Token==p.Token,"El pago cambió o fue anulado. Actualizá los datos.");
@@ -107,5 +84,5 @@ public sealed partial class FinanceStore
         if(p.Id==0){ServiceRules.Require(!p.Voided,"Un nuevo pago no puede estar anulado.");return await c.ExecuteScalarAsync<long>("INSERT INTO service_payments(token,obligation_id,payment_date,amount,method,notes) VALUES(@Token,@ObligationId,@Date,@Amount,@Method,@Notes); SELECT LAST_INSERT_ID();",p,t);}
         await Audit(c,t,"service_payments",p.Id,p.Voided?"void":"edit",old);
         await c.ExecuteAsync("UPDATE service_payments SET payment_date=@Date,amount=@Amount,method=@Method,notes=@Notes,voided=@Voided,version=version+1 WHERE id=@Id",p,t);return p.Id;
-    });
+    }
 }

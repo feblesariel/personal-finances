@@ -23,7 +23,7 @@ public sealed class ServiceEditor : EditorViewModel
         AmountUsd=Model.UsualAmountUsd?.ToString("N2",Money.Ar)??"";Amount=Model.UsualAmount?.ToString("N2",Money.Ar)??"";Title=model==null?"Agregar servicio":"Editar servicio";Subtitle="Lo cargás una sola vez. Cada mes conserva sus importes y pagos; desactivar conserva el historial.";
     }
     public static decimal ParseZero(string text)=>decimal.TryParse(text,System.Globalization.NumberStyles.Number,Money.Ar,out var n)&&n==0?0:Money.Parse(text);
-    protected override async Task Save(){if(IsCard)Model.Currency="ARS";Model.UsualAmountUsd=IsCard&&!string.IsNullOrWhiteSpace(AmountUsd)?ParseZero(AmountUsd):null;Model.UsualAmount=string.IsNullOrWhiteSpace(Amount)?null:ParseZero(Amount);var wasNew=Model.Id==0;Model.Id=await store.SaveServiceAsync(Model);if(!wasNew)Model.Version++;await store.PrepareServiceMonthAsync(DateTime.Today);Close();}
+    protected override async Task Save(){if(IsCard)Model.Currency="ARS";Model.UsualAmount=string.IsNullOrWhiteSpace(Amount)?null:ParseZero(Amount);var wasNew=Model.Id==0;Model.Id=await store.SaveServiceAsync(Model);if(!wasNew)Model.Version++;Close();}
 }
 public sealed class ObligationEditor : EditorViewModel
 {
@@ -40,13 +40,13 @@ public sealed class ObligationEditor : EditorViewModel
     public string Installments {get;set;}
     public ObligationEditor(FinanceStore store,RecurringService service,ServiceObligation model)
     {
-        this.store=store;Model=model with{};IsCard=service.Type=="Tarjeta de crédito";if(DualCurrency)Model.Currency="ARS";AmountUsd=(service.UsualAmountUsd??0).ToString("N2",Money.Ar);Amount=Model.Amount.ToString("N2",Money.Ar);Minimum=Model.Minimum?.ToString("N2",Money.Ar)??"";Installment=Model.Installment?.ToString()??"";Installments=Model.Installments?.ToString()??"";
+        this.store=store;Model=model with{};IsCard=service.Type=="Tarjeta de crédito";if(DualCurrency)Model.Currency="ARS";AmountUsd=(service.UsualAmountUsd??0).ToString("N2",Money.Ar);Amount=Model.AmountConfirmed?Model.Amount.ToString("N2",Money.Ar):"";Minimum=Model.Minimum?.ToString("N2",Money.Ar)??"";Installment=Model.Installment?.ToString()??"";Installments=Model.Installments?.ToString()??"";
         Title=(NewPeriod?"Generar período · ":"Editar período · ")+service.Name;Subtitle="Confirmá el importe real y el vencimiento. El período identifica el mes (o año) de la obligación.";
     }
     protected override async Task Save()
     {
         if(NewPeriod)Model.Period=new(Model.Period.Year,Model.Period.Month,1);
-        Model.Amount=ServiceEditor.ParseZero(Amount);Model.Minimum=string.IsNullOrWhiteSpace(Minimum)?null:ServiceEditor.ParseZero(Minimum);
+        Model.AmountConfirmed=!string.IsNullOrWhiteSpace(Amount);Model.Amount=Model.AmountConfirmed?ServiceEditor.ParseZero(Amount):0;Model.Minimum=string.IsNullOrWhiteSpace(Minimum)?null:ServiceEditor.ParseZero(Minimum);
         Model.Installment=ParseInt(Installment);Model.Installments=ParseInt(Installments);
         await store.SaveServicePeriodAsync(Model,DualCurrency?ServiceEditor.ParseZero(AmountUsd):null);Close();
     }
