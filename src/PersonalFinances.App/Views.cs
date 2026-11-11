@@ -35,5 +35,7 @@ public sealed class Dialogs : IDialogs
     public bool Confirm(string text)=>MessageBox.Show(Application.Current.Windows.OfType<Window>().LastOrDefault(w=>w.IsActive)??Application.Current.MainWindow,text,"Personal Finances",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes;
     public string? PickText(){var d=new OpenFileDialog{Filter="Archivos de texto (*.txt)|*.txt|Todos los archivos|*.*",Title="Seleccionar TXT de consumos"};return d.ShowDialog()==true?d.FileName:null;}
     public string? PickFolder(){var d=new OpenFolderDialog{Title="Carpeta del resumen TXT"};return d.ShowDialog()==true?d.FolderName:null;}
+    public string? SaveBackup(){var d=new SaveFileDialog{Title="Exportar todos los datos",Filter="Respaldo de Personal Finances (*.pfinance)|*.pfinance",FileName="PersonalFinances-"+DateTime.Now.ToString("yyyy-MM-dd-HHmm")+".pfinance",DefaultExt=".pfinance",AddExtension=true,OverwritePrompt=true};return d.ShowDialog()==true?d.FileName:null;}
+    public string? PickBackup(){var d=new OpenFileDialog{Title="Importar respaldo completo",Filter="Respaldo de Personal Finances (*.pfinance)|*.pfinance",CheckFileExists=true};return d.ShowDialog()==true?d.FileName:null;}
     public void OpenFolder(string path)=>Process.Start(new ProcessStartInfo("explorer.exe",path){UseShellExecute=true});
 }

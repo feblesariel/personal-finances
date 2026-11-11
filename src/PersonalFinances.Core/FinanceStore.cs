@@ -4,7 +4,7 @@ using Dapper;
 using MySqlConnector;
 
 namespace PersonalFinances.Core;
-public sealed class FinanceStore(ConnectionProfile profile)
+public sealed partial class FinanceStore(ConnectionProfile profile)
 {
     public const string ExportFileName = "RESUMEN_TARJETAS.txt";
     public ConnectionProfile Profile => profile;
@@ -62,8 +62,21 @@ public sealed class FinanceStore(ConnectionProfile profile)
                 await c.ExecuteAsync("INSERT INTO schema_migrations VALUES(2,UTC_TIMESTAMP(6))",transaction:tx);
                 await tx.CommitAsync();
             }
+            if(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations WHERE version=3")==0)
+            {
+                await using var tx=await c.BeginTransactionAsync();
+                await c.ExecuteAsync("INSERT IGNORE INTO settings VALUES('ledger_id',@id); INSERT INTO schema_migrations VALUES(3,UTC_TIMESTAMP(6));",new {id=Guid.NewGuid().ToString("N")},tx);
+                await tx.CommitAsync();
+            }
         }
-        finally { await c.ExecuteAsync("SELECT RELEASE_LOCK(@name)",new {name=migrationLock}); }
+        finally
+        {
+            // A timed-out/disconnected command already releases its session lock when disposed.
+            // Releasing on a broken connection must not mask the original database error.
+            if(c.State==ConnectionState.Open)
+                try{await c.ExecuteAsync("SELECT RELEASE_LOCK(@name)",new {name=migrationLock});}
+                catch(Exception e){LocalConfig.Log(e);}
+        }
     }
     public async Task<Snapshot> ReadAsync()
     {

@@ -87,6 +87,7 @@ internal static class Program
             window.Width=960;window.Height=620;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"dashboard-960.png"));Check(true,"Render a 1320 y 960 píxeles sin excepciones");
             window.Close();window=new MainWindow(profile);app.MainWindow=window;window.Show();var restarted=(ShellViewModel)window.DataContext;await Wait(()=>restarted.Ready&&restarted.TotalArs=="$ 100,00");Check(restarted.TotalUsd=="US$ 12,99","Reabrir interfaz conserva movimientos y totales");
             window=await TableLayoutChecks.Run(window,profile,store,app,artifacts,Check);
+            await BackupUiChecks.Run(window,profile,app,temp,artifacts,Check);
             Check(!Visuals<FrameworkElement>(window).Any(e=>Validation.GetHasError(e)),"Controles sin errores de validación WPF"); Check(Visuals<ComboBox>(window).Where(c=>c.ItemsSource is IEnumerable<Choice>).All(c=>c.SelectedItem!=null),"Selectores de filtros con opción visible"); Check(trace.Errors.Count==0,"Enlaces WPF sin errores: "+string.Join(";",trace.Errors.Take(4)));
             await System.IO.File.WriteAllLinesAsync(System.IO.Path.Combine(artifacts,"ui-test-results.txt"),results.Prepend(DateTime.Now.ToString("O")));Console.WriteLine($"RESULT UI: {results.Count} passed, 0 failed");
         }

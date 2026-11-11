@@ -19,7 +19,7 @@ public sealed class RelayCommand(Action<object?> action) : ICommand
 {
     public bool CanExecute(object? p)=>true;public event EventHandler? CanExecuteChanged {add{}remove{}}public void Execute(object? p)=>action(p);
 }
-public interface IDialogs { bool Show(EditorViewModel vm); bool Confirm(string text); string? PickText(); string? PickFolder(); void OpenFolder(string path); }
+public interface IDialogs { bool Show(EditorViewModel vm); bool Confirm(string text); string? PickText(); string? PickFolder(); string? SaveBackup(); string? PickBackup(); void OpenFolder(string path); }
 public abstract class EditorViewModel : Observable
 {
     private string error="";private bool busy;

@@ -65,11 +65,13 @@ public sealed class ShellViewModel : Observable
     public ICommand NavigateCommand {get;}public ICommand NewCommand {get;}public ICommand EditCommand {get;}public ICommand DeleteCommand {get;}public ICommand RetryCommand {get;}public ICommand ExportCommand {get;}public ICommand ImportCommand {get;}public ICommand NewCardCommand {get;}public ICommand EditCardCommand {get;}public ICommand NewCategoryCommand {get;}public ICommand EditCategoryCommand {get;}public ICommand NewPeriodCommand {get;}public ICommand EditPeriodCommand {get;}public ICommand NextPeriodCommand {get;}public ICommand ExportFolderCommand {get;}public ICommand LogsCommand {get;}public ICommand ClearFiltersCommand {get;}
     public ICommand ReconfigureCommand {get;}public ICommand TestConnectionCommand {get;}
     public ICommand ClearStatisticsFiltersCommand {get;}
+    public ICommand BackupExportCommand {get;}public ICommand BackupImportCommand {get;}
     private AsyncCommand Command(Func<Task> action)=>new(action,e=>Notice=LocalConfig.Friendly(e));
     public ShellViewModel(IDialogs dialogs,ConnectionProfile? profile=null)
     {
         this.dialogs=dialogs;suppliedProfile=profile;NavigateCommand=new RelayCommand(p=>Page=p?.ToString()??"Inicio");NewCommand=Command(()=>EditMovement(null));EditCommand=Command(()=>SelectedMovement==null?Task.CompletedTask:EditMovement(SelectedMovement));DeleteCommand=Command(Delete);
         RetryCommand=Command(InitializeAsync);ExportCommand=Command(()=>Export(true));ImportCommand=Command(Import);
+        BackupExportCommand=Command(()=>TransferBackup(false));BackupImportCommand=Command(()=>TransferBackup(true));
         ReconfigureCommand=Command(async()=>{ConnectionProfile? current=store?.Profile;try{current??=LocalConfig.Load();}catch(Exception e){LocalConfig.Log(e);}var editor=new ConnectionEditor(current);if(dialogs.Show(editor))await InitializeAsync();});
         TestConnectionCommand=Command(async()=>{var p=store?.Profile??LocalConfig.Load();if(p==null){ReconfigureCommand.Execute(null);return;}var result=await DatabaseSetup.ProbeAsync(p);Notice=result.Message;});
         NewCardCommand=Command(()=>EditName(false,true));EditCardCommand=Command(()=>EditName(false,false));NewCategoryCommand=Command(()=>EditName(true,true));EditCategoryCommand=Command(()=>EditName(true,false));
@@ -78,6 +80,21 @@ public sealed class ShellViewModel : Observable
         LogsCommand=new RelayCommand(_=>{System.IO.Directory.CreateDirectory(LocalConfig.Folder);dialogs.OpenFolder(LocalConfig.Folder);});
         ClearFiltersCommand=new RelayCommand(_=>{FilterCard=0;FilterPeriod=0;FilterCategory=0;FilterCurrency="Todas";Search="";});
         ClearStatisticsFiltersCommand=new RelayCommand(_=>{StatsCard=0;StatsPeriod=0;StatsCurrency="ARS";});
+    }
+    private async Task TransferBackup(bool importing)
+    {
+        if(!Ready||store==null)throw new RuleException("Conectá MySQL antes de transferir datos.");
+        var path=importing?dialogs.PickBackup():dialogs.SaveBackup();if(path==null)return;
+        if(!importing)
+        {
+            var editor=new BackupExportEditor(store,path);if(dialogs.Show(editor))Notice="Respaldo cifrado y verificado: "+path;
+            return;
+        }
+        var restore=new BackupRestoreEditor(store,path);
+        if(!dialogs.Show(restore)||restore.Result==null)return;
+        ClearFiltersCommand.Execute(null);ClearStatisticsFiltersCommand.Execute(null);Tiles.Clear();SelectedMovement=null;SelectedCard=null;SelectedCategory=null;SelectedPeriod=null;
+        await RefreshAsync();Sync=restore.Result.ExportStatus;
+        Notice="Restauración completa verificada. Copia previa: "+restore.Result.SafetyBackupPath;
     }
     public async Task InitializeAsync()
     {

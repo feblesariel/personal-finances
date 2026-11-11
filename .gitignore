@@ -23,6 +23,7 @@ TestResults/
 *.sql
 *.sql.gz
 *.dump
+*.pfinance
 .env
 .env.*
 connection*.json

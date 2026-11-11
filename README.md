@@ -4,15 +4,15 @@ Aplicación de escritorio Windows x64 para consumos de tarjetas: C# / .NET 10, W
 
 ## Instalación en una nueva computadora
 
-Si ya tenés Git, copiá la URL real del repositorio en estos comandos:
+Si ya tenés Git, ejecutá:
 
 ```powershell
-git clone URL_DEL_REPOSITORIO
+git clone https://github.com/feblesariel/personal-finances.git
 cd personal-finances
 .\instalar.bat
 ```
 
-También podés descargar el repositorio como ZIP, extraerlo y hacer doble clic en **instalar.bat**. No ejecutes el BAT dentro del ZIP. Esta copia del proyecto no tiene un remoto Git configurado: `URL_DEL_REPOSITORIO` es un marcador que debés reemplazar, no una URL de publicación.
+También podés descargar el repositorio como ZIP, extraerlo y hacer doble clic en **instalar.bat**. No ejecutes el BAT dentro del ZIP.
 
 El instalador encuentra el proyecto aunque se ejecute desde otra carpeta. Verifica Windows x64, busca el SDK .NET 10, restaura NuGet, compila Release y publica un ejecutable Windows x64 self-contained. Si falta el SDK, ofrece descargarlo e instalarlo para el usuario actual mediante el script oficial de Microsoft, sin cambiar permanentemente la política de PowerShell ni pedir administrador. Si la descarga falla, muestra el enlace oficial. Necesita Internet para descargar el SDK y los paquetes NuGet.
 
@@ -81,9 +81,27 @@ Se actualiza al cambiar datos y se puede usar **Exportar ahora**. Usa UTF-8, imp
 
 Cerrá la aplicación, eliminá el acceso directo **Personal Finances** y la carpeta `%LOCALAPPDATA%\Programs\PersonalFinances`. Esto no borra MySQL ni tus preferencias. Si también querés quitar la configuración de este usuario, eliminá `%LOCALAPPDATA%\PersonalFinances` después de respaldar lo necesario. No borres la base MySQL salvo que quieras perder sus datos deliberadamente.
 
-## Respaldo
+## Respaldo y transferencia de datos
 
-El TXT es de consulta, no un respaldo completo. Con MySQL Workbench, usá **Server → Data Export**, seleccioná solo tu base de Personal Finances y exportá estructura y datos a un SQL local o disco externo. Usá respaldo transaccional InnoDB. Hacé copias periódicas y antes de actualizar. Restaurá mediante **Data Import / Restore** y configurá la conexión en el programa. No copies las credenciales DPAPI a otro equipo: ingresalas de nuevo allí.
+El TXT es de consulta. Para guardar o trasladar toda la contabilidad, usá **Configuración → Respaldo y transferencia de datos**:
+
+1. En el equipo de origen, elegí **Exportar todos los datos**, seleccioná dónde guardar el `.pfinance` y escribí dos veces una contraseña de al menos 12 caracteres. La aplicación confirma la ubicación después de cifrar y verificar el archivo.
+2. Copiá ese único archivo por Drive, pendrive u otro medio. Conservá la contraseña por separado: no se guarda en el respaldo ni se puede recuperar si la olvidás.
+3. En el otro equipo, instalá el programa, configurá su MySQL y su carpeta de resumen. Elegí **Importar respaldo**, seleccioná el archivo y escribí la contraseña.
+4. Presioná **Validar respaldo**. Revisá fecha, versión, cantidades, rango de fechas y datos existentes en el destino. Se crea y verifica una copia previa antes de permitir el reemplazo.
+5. Marcá la confirmación y presioná **Restaurar datos**. Se reemplaza toda la contabilidad del destino; no se mezclan ni duplican registros. El dashboard, historial y estadísticas se actualizan y se regenera el TXT en la carpeta de ese equipo. Si esa carpeta está desconectada, los datos restaurados quedan guardados y el resumen se reintenta normalmente.
+
+El archivo incluye tarjetas y categorías activas e inactivas, todos los períodos, consumos ARS/USD, reintegros y vínculos, comercios, observaciones, tokens de importación, auditoría y movimientos eliminados lógicamente. Conserva identificadores, fechas y centavos exactos. Excluye credenciales, connection strings, rutas del equipo, preferencias y logs técnicos. Cada equipo mantiene su propia configuración; una copia es una fotografía de la contabilidad, no sincronización entre computadoras.
+
+**Recuperación:** las copias automáticas quedan en `%LOCALAPPDATA%\PersonalFinances\Backups`, con nombre `Antes-de-restaurar-….pfinance`. Usan **la misma contraseña del archivo que estabas importando**, y se conserva su ruta en la vista previa y en el resultado. Para volver al estado anterior, importá esa copia desde la misma sección. También podés abrir la carpeta local desde Configuración. Las copias no se eliminan automáticamente; conservá las que necesites en un lugar seguro. Si cancelás la vista previa, no se reemplaza ningún dato y la copia previa igualmente permanece disponible.
+
+La restauración usa una única transacción InnoDB con claves foráneas activas y verifica todos los registros antes de confirmar. Si cambia el destino después de la vista previa, exige volver a validar; si falla la inserción o la verificación, MySQL revierte todos los cambios. No se ejecutan reinicializaciones ni cambios destructivos de esquema.
+
+### Formato y compatibilidad
+
+Formato de respaldo **v1**, independiente de la versión del programa: JSON comprimido con Brotli y cifrado autenticado **AES-256-GCM** (nonce de 12 bytes, tag de 16 bytes), clave derivada con **PBKDF2-HMAC-SHA256, 600.000 iteraciones y salt aleatorio de 32 bytes**. La cabecera también se autentica. Se usan las implementaciones criptográficas de .NET, sin algoritmos propios. Cada archivo se escribe mediante temporal cifrado, se descifra para verificarlo y se reemplaza de forma segura. Límite de esta versión: **64 MB cifrados / 128 MB descomprimidos**; archivos dañados o versiones incompatibles se rechazan antes de modificar la base.
+
+La migración 3 agrega solamente un identificador de contabilidad (`ledger_id`). Ese identificador junto con los IDs originales y los tokens de movimientos se conserva al transferir, para permitir una futura fusión con resolución de conflictos. Esta versión implementa únicamente restauración completa. La compatibilidad futura se comprobará antes de restaurar; no se interpreta un formato desconocido por aproximación.
 
 ## Desarrollo y pruebas
 
@@ -94,4 +112,6 @@ dotnet run --project tests/PersonalFinances.Tests -c Release
 dotnet run --project tests/PersonalFinances.UiTests -c Release
 ```
 
-Las pruebas de MySQL reciben credenciales de prueba por las variables de proceso `PF_ADMIN_USER` y `PF_ADMIN_PASSWORD`, usan bases temporales `personal_finances_tests_*` y las eliminan al terminar. Aíslan configuración y carpetas de exportación y no insertan datos en producción. Los resultados se guardan en `artifacts`, excluida de Git. Las pruebas del instalador usan destinos temporales propios. No versionar datos reales, respaldos SQL, ejecutables, credenciales ni configuración local. Esta distribución compilada desde fuente no tiene firma Authenticode.
+La suite incluye una transferencia entre dos bases independientes, comparación exacta de entidades y totales, contraseñas incorrectas, corrupción, versiones incompatibles, fallo SQL con rollback, copia de recuperación, concurrencia y exportación sin Drive. Las pruebas WPF ejecutan los diálogos reales, validación, vista previa, confirmación y actualización de todas las pantallas.
+
+Las pruebas de MySQL reciben credenciales de prueba por las variables de proceso `PF_ADMIN_USER` y `PF_ADMIN_PASSWORD`, usan bases temporales `personal_finances_tests_*` y las eliminan al terminar. Aíslan configuración y carpetas de exportación y no insertan datos en producción. Los resultados se guardan en `artifacts`, excluida de Git. Las pruebas del instalador usan destinos temporales propios. No versionar datos reales, archivos `.pfinance`, respaldos SQL, ejecutables, credenciales ni configuración local. Esta distribución compilada desde fuente no tiene firma Authenticode.
