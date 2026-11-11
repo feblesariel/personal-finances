@@ -29,10 +29,10 @@ internal static class InteractionChecks
     public static async Task Run(MainWindow window,ShellViewModel vm,Action<bool,string> check,string artifacts)
     {
         var nav=Visuals<NavigationButton>(window);window.UpdateLayout();
-        check(nav.Count==5&&nav.All(n=>ReferenceEquals(n.Style,nav[0].Style)&&ReferenceEquals(n.Template,nav[0].Template)),"Sidebar usa un único componente, estilo y plantilla para las cinco rutas");
+        check(nav.Count==6&&nav.All(n=>ReferenceEquals(n.Style,nav[0].Style)&&ReferenceEquals(n.Template,nav[0].Template)),"Sidebar usa un único componente, estilo y plantilla para las seis rutas");
         check(nav.All(n=>n.Height==44&&n.Padding==nav[0].Padding&&n.Margin==nav[0].Margin),"Botones laterales con altura, padding y separación idénticos");
         var glyphs=nav.Select(n=>(ShapePath)n.Template.FindName("IconGlyph",n)).ToList();
-        check(glyphs.All(g=>g.ActualWidth==18&&g.ActualHeight==18&&g.Stretch==Stretch.Uniform&&Math.Abs(g.Data.Bounds.Width-18)<0.01&&Math.Abs(g.Data.Bounds.Height-18)<0.01),"Cinco iconos vectoriales normalizados en 18×18, sin caracteres Unicode");
+        check(glyphs.All(g=>g.ActualWidth==18&&g.ActualHeight==18&&g.Stretch==Stretch.Uniform&&Math.Abs(g.Data.Bounds.Width-18)<0.01&&Math.Abs(g.Data.Bounds.Height-18)<0.01),"Seis iconos vectoriales normalizados en 18×18, sin caracteres Unicode");
         void CheckAlignment()
         {
             window.UpdateLayout();var labels=nav.Select(n=>(TextBlock)n.Template.FindName("NavLabel",n)).ToList();var left=labels.Select(l=>l.TransformToAncestor(window).Transform(new Point()).X).ToList();

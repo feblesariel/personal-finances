@@ -42,6 +42,13 @@ internal static class BackupFile
             var buffer=new byte[81920];try{int read;while((read=brotli.Read(buffer))>0){if(output.Length+read>MaxJson)throw new RuleException("El contenido descomprimido excede el límite permitido.");output.Write(buffer,0,read);}}finally{CryptographicOperations.ZeroMemory(buffer);}
             plain=output.ToArray();
             if(output.TryGetBuffer(out var segment))CryptographicOperations.ZeroMemory(segment.AsSpan());
+            using(var json=JsonDocument.Parse(plain))
+            {
+                var e=json.RootElement;
+                if(e.TryGetProperty("BackupFormatVersion",out var v)&&v.GetInt32() is 2 or 3)
+                    foreach(var collectionName in new[]{"Services","ServiceObligations","ServicePayments"})
+                        if(!e.TryGetProperty(collectionName,out var collection)||collection.ValueKind!=JsonValueKind.Array)throw new RuleException("Faltan colecciones de servicios en el respaldo.");
+            }
             return JsonSerializer.Deserialize<BackupDocument>(plain,BackupValidation.Json)??throw new RuleException("El respaldo no contiene datos válidos.");
         }
         catch(AuthenticationTagMismatchException){throw new RuleException("La contraseña es incorrecta o el respaldo fue alterado. No se modificó la base de datos.");}

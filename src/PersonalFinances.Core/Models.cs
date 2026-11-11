@@ -41,6 +41,7 @@ public sealed class Movement
 }
 public sealed record Snapshot(List<Card> Cards, List<Category> Categories, List<Period> Periods, List<Movement> Movements, Dictionary<string,string> Settings)
 {
+    public ServiceLedger Services {get;init;} = ServiceLedger.Empty;
     public long Revision => long.Parse(Settings.GetValueOrDefault("revision","0"));
     public Period? Current(int cardId) => Periods.Where(p=>p.CardId==cardId).OrderBy(p=>p.Start).FirstOrDefault(p=>p.Start<=DateTime.Today && p.Closing>=DateTime.Today)
         ?? Periods.Where(p=>p.CardId==cardId && p.Closing<DateTime.Today).OrderByDescending(p=>p.Closing).FirstOrDefault()

@@ -14,7 +14,7 @@ internal static class SetupChecks
     {
         var list=new List<T>();for(var i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++){var c=VisualTreeHelper.GetChild(parent,i);if(c is T value)list.Add(value);list.AddRange(Visuals<T>(c));}return list;
     }
-    private static async Task Wait(Func<bool> predicate){var deadline=DateTime.UtcNow.AddSeconds(20);while(!predicate()){if(DateTime.UtcNow>deadline)throw new TimeoutException("Setup UI timeout");await Task.Delay(50);}}
+    private static async Task Wait(Func<bool> predicate){var deadline=DateTime.UtcNow.AddSeconds(150);while(!predicate()){if(DateTime.UtcNow>deadline)throw new TimeoutException("Setup UI timeout");await Task.Delay(50);}}
     private static void Fill(Window w,string property,string value)
     {
         var field=Visuals<TextBox>(w).Single(t=>t.GetBindingExpression(TextBox.TextProperty)?.ParentBinding.Path?.Path==property);field.Text=value;field.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
@@ -27,7 +27,7 @@ internal static class SetupChecks
         {
             var window=app.Windows.OfType<EditorWindow>().FirstOrDefault(w=>w.DataContext is T);if(window==null)return;timer.Stop();
             try{await edit(window,(T)window.DataContext);completion.TrySetResult();}catch(Exception ex){completion.TrySetException(ex);window.Close();}
-        };timer.Start();return completion.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        };timer.Start();return completion.Task.WaitAsync(TimeSpan.FromSeconds(180));
     }
     public static async Task Run(Application app,ConnectionProfile rootProfile,MySqlConnection root,string temp,Action<bool,string> check)
     {

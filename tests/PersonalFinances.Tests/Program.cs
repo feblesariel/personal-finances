@@ -4,7 +4,7 @@ using MySqlConnector;
 using PersonalFinances.Core;
 
 var password=Environment.GetEnvironmentVariable("PF_ADMIN_PASSWORD")??throw new Exception("Definí PF_ADMIN_PASSWORD solo para este proceso.");
-var admin=new ConnectionProfile("localhost",3306,Environment.GetEnvironmentVariable("PF_ADMIN_USER")??throw new Exception("Definí PF_ADMIN_USER para las pruebas."),password);
+var admin=new ConnectionProfile("localhost",uint.Parse(Environment.GetEnvironmentVariable("PF_ADMIN_PORT")??"3306"),Environment.GetEnvironmentVariable("PF_ADMIN_USER")??throw new Exception("Definí PF_ADMIN_USER para las pruebas."),password);
 var db="personal_finances_tests_"+DateTime.UtcNow.ToString("yyyyMMddHHmmss");
 await using var root=new MySqlConnection((admin with {Database=""}).ConnectionString);await root.OpenAsync();
 await root.ExecuteAsync($"CREATE DATABASE `{db}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
@@ -85,6 +85,7 @@ try
     var category=s.Categories.First(c=>c.Id==cat);category.Active=false;await storeTest.SaveCategoryAsync(category);await Reject(()=>storeTest.SaveMovementAsync(New(card,cat,5,"ARS",DateTime.Today)),"Categoría inactiva conserva historial y evita nuevas cargas");
     await using var sql=new MySqlConnection(profile.ConnectionString);await sql.OpenAsync();Check(await sql.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM audit_log")>0,"Auditoría de ediciones y eliminaciones");
     Check(await sql.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM movements WHERE deleted_at IS NOT NULL")==1,"Eliminación lógica conserva registro histórico");
+    await ServiceTests.Run(storeTest,Check);
     await BackupTests.Run(root,admin,temp,Check);
     Console.WriteLine($"RESULT: {results.Count} passed, 0 failed; isolated database {db}");
     var output=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../artifacts/test-results.txt"));Directory.CreateDirectory(Path.GetDirectoryName(output)!);await File.WriteAllLinesAsync(output,results.Prepend(DateTime.Now.ToString("O")).Append($"{results.Count} passed; 0 failed; test database removed after run"));

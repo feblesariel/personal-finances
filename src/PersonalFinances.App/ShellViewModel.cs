@@ -16,12 +16,14 @@ public sealed record PeriodDisplay(Period Model,string Card,string Dates,string 
 {
     public string Name=>Model.Name;
 }
-public sealed class ShellViewModel : Observable
+public sealed partial class ShellViewModel : Observable
 {
     private readonly IDialogs dialogs;private readonly ConnectionProfile? suppliedProfile;private FinanceStore? store;private ExportService? exporter;
     private Snapshot snapshot=new([],[],[],[],new());private bool ready;private string notice="Conectando con MySQL…";private string sync="Resumen pendiente";private string page="Inicio";
-    public string Page {get=>page;set{if(Set(ref page,value)){Changed(nameof(Subtitle));}}}
-    public string Subtitle=>Page switch{"Inicio"=>"Tus tarjetas, en un vistazo.","Consumos"=>"Todo tu historial, siempre a mano.","Estadísticas"=>"Entendé en qué estás gastando.","Tarjetas y períodos"=>"Cada tarjeta tiene sus propias fechas.",_=>"Datos locales. Un resumen siempre disponible en Drive."};
+    public string Page {get=>page;set{if(Set(ref page,value)){Changed(nameof(Subtitle));Changed(nameof(PageNewLabel));Changed(nameof(PageNewCommand));if(value=="Servicios"){FilterServices();if(Ready)PrepareServicesCommand.Execute(null);}}}}
+    public string PageNewLabel=>Page=="Servicios"?"+ Agregar servicio":"+ Nuevo consumo";
+    public ICommand PageNewCommand=>Page=="Servicios"?AddServiceCommand:NewCommand;
+    public string Subtitle=>Page switch{"Inicio"=>"Tus tarjetas, en un vistazo.","Servicios"=>"Tus obligaciones y pagos, en un solo lugar.","Consumos"=>"Todo tu historial, siempre a mano.","Estadísticas"=>"Entendé en qué estás gastando.","Tarjetas y períodos"=>"Cada tarjeta tiene sus propias fechas.",_=>"Datos locales. Un resumen siempre disponible en Drive."};
     public string Today=>DateTime.Today.ToString("dddd d 'de' MMMM",Money.Ar);
     public bool Ready {get=>ready;set=>Set(ref ready,value);}public string Notice {get=>notice;set=>Set(ref notice,value);}public string Sync {get=>sync;set=>Set(ref sync,value);}
     public string Connection=>store==null?"Sin conexión configurada":$"MySQL local · {store.Profile.Host}:{store.Profile.Port} · {store.Profile.Database} · {store.Profile.User}";
@@ -69,7 +71,7 @@ public sealed class ShellViewModel : Observable
     private AsyncCommand Command(Func<Task> action)=>new(action,e=>Notice=LocalConfig.Friendly(e));
     public ShellViewModel(IDialogs dialogs,ConnectionProfile? profile=null)
     {
-        this.dialogs=dialogs;suppliedProfile=profile;NavigateCommand=new RelayCommand(p=>Page=p?.ToString()??"Inicio");NewCommand=Command(()=>EditMovement(null));EditCommand=Command(()=>SelectedMovement==null?Task.CompletedTask:EditMovement(SelectedMovement));DeleteCommand=Command(Delete);
+        this.dialogs=dialogs;suppliedProfile=profile;InitializeServiceCommands();NavigateCommand=new RelayCommand(p=>Page=p?.ToString()??"Inicio");NewCommand=Command(()=>EditMovement(null));EditCommand=Command(()=>SelectedMovement==null?Task.CompletedTask:EditMovement(SelectedMovement));DeleteCommand=Command(Delete);
         RetryCommand=Command(InitializeAsync);ExportCommand=Command(()=>Export(true));ImportCommand=Command(Import);
         BackupExportCommand=Command(()=>TransferBackup(false));BackupImportCommand=Command(()=>TransferBackup(true));
         ReconfigureCommand=Command(async()=>{ConnectionProfile? current=store?.Profile;try{current??=LocalConfig.Load();}catch(Exception e){LocalConfig.Log(e);}var editor=new ConnectionEditor(current);if(dialogs.Show(editor))await InitializeAsync();});
@@ -120,7 +122,7 @@ public sealed class ShellViewModel : Observable
         Replace(Cards,snapshot.Cards);Replace(Categories,snapshot.Categories);Replace(Periods,snapshot.Periods.Select(p=>new PeriodDisplay(p,snapshot.Cards.Single(c=>c.Id==p.CardId).Name,$"{p.Start:dd/MM/yyyy} — {p.Closing:dd/MM/yyyy}",p.Due.ToString("dd/MM/yyyy"))));
         SyncChoices(cardChoices,[new(0,"Todas las tarjetas"),..snapshot.Cards.Select(c=>new Choice(c.Id,c.Name))]);SyncChoices(categoryChoices,[new(0,"Todas las categorías"),..snapshot.Categories.Select(c=>new Choice(c.Id,c.Name))]);
         Changed(nameof(CardFilter));Changed(nameof(CategoryFilter));RebuildPeriodChoices();Changed(nameof(StatisticsCardFilter));RebuildStatisticsPeriods();Changed(nameof(ExportPath));Changed(nameof(Connection));
-        UpdateDashboard();ApplyFilters();UpdateStatistics();
+        UpdateDashboard();ApplyFilters();UpdateStatistics();RefreshServices();
         var unassigned=snapshot.Movements.Count(m=>m.PeriodId==null);
         var manualOutside=snapshot.Movements.Count(m=>m.ManualPeriod&&snapshot.Periods.Any(p=>p.Id==m.PeriodId&&(m.Date<p.Start||m.Date>p.Closing)));
         var needs=snapshot.Cards.Count(c=>c.Active&&(snapshot.Current(c.Id)==null||snapshot.Current(c.Id)!.Closing<DateTime.Today));

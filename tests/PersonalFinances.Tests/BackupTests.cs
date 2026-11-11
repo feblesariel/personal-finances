@@ -32,6 +32,11 @@ internal static class BackupTests
             original=(await source.ReadAsync()).Movements.Single(m=>m.Id==original.Id);await source.SaveMovementAsync(original);
             await source.SettingAsync("import:test",JsonSerializer.Serialize(new{Batch="transferencia-prueba",SourceHash=new string('a',64),Total=10000.10m,Lines=new[]{new BackupImportLine(1,original.Id,original.Token)},ImportedAt=DateTimeOffset.Now}));
             await source.SettingAsync("export_path",@"Q:\ORIGEN-NO-EXPORTAR\RESUMEN_TARJETAS.txt");await source.SettingAsync("private_sentinel","SECRET-NO-EXPORTAR");
+            var svc=new RecurringService{Name="Servicio respaldo",Type="Tarjeta de crédito",CardId=visa,UsualAmount=1000,UsualAmountUsd=20};svc.Id=await source.SaveServiceAsync(svc);
+            var obligation=new ServiceObligation{ServiceId=svc.Id,Period=new(2026,11,1),Due=new(2026,11,30),Amount=1000,Minimum=100,Installment=5,Installments=24,Notes="Cuota histórica"};obligation.Id=await source.SaveObligationAsync(obligation);
+            await source.SaveServicePaymentAsync(new(){ObligationId=obligation.Id,Amount=100,Notes="Mínimo",Method="VISA"});
+            await source.SaveServicePaymentAsync(new(){ObligationId=obligation.Id,Amount=50});
+            await source.SaveObligationAsync(obligation with{Id=0,Currency="USD",Amount=20,Minimum=null,Due=null});
             var sourceService=new BackupService(source,"1.4.0-test");var targetService=new BackupService(target,"1.4.0-test");
             var path=Path.Combine(temp,"transferencia.pfinance");var exported=await sourceService.ExportAsync(path,Password);
             var decoded=await BackupFile.ReadAsync(path,Password);var fingerprint=BackupValidation.Fingerprint(exported);
@@ -39,6 +44,8 @@ internal static class BackupTests
             check(decoded.Movements.Length==7&&decoded.Movements.Count(m=>m.DeletedAt!=null)==1&&decoded.Audit.Length>=4,"Exportación completa: eliminaciones lógicas y auditoría contable");
             var json=JsonSerializer.Serialize(decoded);check(!json.Contains("ORIGEN-NO-EXPORTAR")&&!json.Contains("SECRET-NO-EXPORTAR")&&!json.Contains(admin.Password)&&!json.Contains("ConnectionString"),"Respaldo excluye credenciales, rutas y ajustes locales");
             var raw=await File.ReadAllBytesAsync(path);check(!Encoding.UTF8.GetString(raw).Contains("COTO transferencia")&&!Encoding.UTF8.GetString(raw).Contains(Password),"Archivo sin datos financieros ni contraseña en texto plano");
+            var legacy=decoded with{BackupFormatVersion=1,DatabaseSchemaVersion=3,Services=[],ServiceObligations=[],ServicePayments=[]};
+            BackupValidation.Validate(legacy);check(legacy.Services.Count==0,"Servicios: respaldo v1 compatible con colecciones vacías");
             var initial=await target.CaptureBackupAsync("test");var initialHash=BackupValidation.Fingerprint(initial.Document);
             async Task Reject(Func<Task> action,string label)
             {try{await action();}catch(RuleException){check(true,label);return;}throw new Exception("FAIL accepted: "+label);}
@@ -61,6 +68,7 @@ internal static class BackupTests
             check(BackupValidation.Fingerprint(await BackupFile.ReadAsync(prepared.SafetyBackupPath,Password))==prepared.DestinationFingerprint,"Copia de seguridad previa cifrada, descifrada y verificada");
             await Reject(()=>targetService.RestoreAsync(prepared,false),"Sin confirmación explícita no se restaura");
             var result=await targetService.RestoreAsync(prepared,true);var restored=await target.CaptureBackupAsync("test");
+            check(restored.Document.Services.Count==1&&restored.Document.ServiceObligations.Count==2&&restored.Document.ServiceObligations[0].Installment==5&&restored.Document.Services[0].UsualAmountUsd==20&&restored.Document.ServiceObligations.Single(o=>o.Currency=="USD").Due==null&&restored.Document.ServicePayments.Count==2&&restored.Document.ServicePayments.Sum(p=>p.Amount)==150,"Servicios: respaldo y restauración entre bases conserva IDs, cuotas, mínimo y todos los pagos");
             check(fingerprint==BackupValidation.Fingerprint(restored.Document),"Importación en base nueva reconstruye exactamente todas las entidades y relaciones");
             check(restored.Document.Movements.Where(m=>m.DeletedAt==null&&m.Currency=="ARS").Sum(m=>m.Refund?-m.Amount:m.Amount)==10679.11m&&restored.Document.Movements.Where(m=>m.DeletedAt==null&&m.Currency=="USD").Sum(m=>m.Amount)==45.49m,"Totales exactos antes/después, ARS/USD y reintegros separados");
             check(restored.Document.Movements.Single(m=>m.Id==original.Id).Notes==original.Notes&&restored.Document.Movements.Any(m=>m.ManualPeriod&&m.Date<new DateTime(2026,9,1)),"Observaciones, fechas e imputaciones históricas manuales preservadas");
@@ -98,6 +106,15 @@ internal static class BackupTests
                 if(!called&&message.StartsWith("Leyendo tarjetas")){called=true;concurrentWrite=source.SaveCardAsync(new(){Name="Creada durante respaldo"});concurrentWrite.GetAwaiter().GetResult();}
             }));
             check(called&&snapshot.Document.Cards.Length==3&&(await source.ReadAsync()).Cards.Count==4,"Vista MVCC consistente mientras otra conexión modifica la base");
+            var oldPath=Path.Combine(temp,"legacy.pfinance");
+            await BackupFile.WriteVerifiedAsync(oldPath,legacy,Password);
+            var oldPrepared=await targetService.PrepareRestoreAsync(oldPath,Password);await targetService.RestoreAsync(oldPrepared,true);
+            var oldRestored=(await target.CaptureBackupAsync("test")).Document;
+            check(oldRestored.Services.Count==0&&oldRestored.ServicePayments.Count==0&&oldRestored.Movements.SequenceEqual(legacy.Movements),"Servicios: restauración efectiva de v1 conserva consumos y deja servicios vacíos");
+            var previousFormat=decoded with{BackupFormatVersion=2,DatabaseSchemaVersion=4,Services=decoded.Services.Select(s=>s with{UsualAmountUsd=null}).ToList(),ServiceObligations=decoded.ServiceObligations.Where(o=>o.Currency=="ARS").ToList()};
+            var v2Path=Path.Combine(temp,"v2.pfinance");await BackupFile.WriteVerifiedAsync(v2Path,previousFormat,Password);
+            var v2Prepared=await targetService.PrepareRestoreAsync(v2Path,Password);await targetService.RestoreAsync(v2Prepared,true);
+            check((await target.ReadAsync()).Services.Obligations.Count==1&&(await target.ReadAsync()).Services.Payments.Count==2,"Servicios: respaldo v2 anterior conserva sus servicios y pagos al restaurar");
             var unknown="unrecognized_business_data";await using(var c=new MySqlConnection(source.Profile.ConnectionString)){await c.OpenAsync();await c.ExecuteAsync($"CREATE TABLE {unknown}(id INT) ENGINE=InnoDB");}
             await Reject(()=>sourceService.ExportAsync(Path.Combine(temp,"unknown.pfinance"),Password),"Esquema desconocido bloquea respaldo parcial en vez de omitir entidades");
             check(!Directory.GetFiles(temp,".pfinance-*.tmp",SearchOption.AllDirectories).Any(),"Escritura segura sin archivos temporales residuales");

@@ -7,6 +7,9 @@
   <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
   <Style x:Key="Label" TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="FontSize" Value="12"/><Setter Property="Margin" Value="0,14,0,6"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
   <Style x:Key="GridText" TargetType="TextBlock"><Setter Property="FontSize" Value="13"/><Setter Property="TextWrapping" Value="NoWrap"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="ToolTip" Value="{Binding Text,RelativeSource={RelativeSource Self}}"/></Style>
+  <Style x:Key="ServiceWrappedText" TargetType="TextBlock" BasedOn="{StaticResource GridText}"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="TextTrimming" Value="None"/><Setter Property="Margin" Value="0,8"/></Style>
+  <Style x:Key="ServiceAmountText" TargetType="TextBlock" BasedOn="{StaticResource GridText}"><Setter Property="TextAlignment" Value="Right"/><Setter Property="TextTrimming" Value="None"/></Style>
+  <Style x:Key="ServiceStatusText" TargetType="TextBlock" BasedOn="{StaticResource ServiceWrappedText}"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="#315E96"/><Style.Triggers><DataTrigger Binding="{Binding BaseStatus}" Value="Pagado"><Setter Property="Foreground" Value="#18704A"/></DataTrigger><DataTrigger Binding="{Binding BaseStatus}" Value="Bonificado"><Setter Property="Foreground" Value="#627188"/></DataTrigger><DataTrigger Binding="{Binding BaseStatus}" Value="Pago parcial"><Setter Property="Foreground" Value="#966100"/></DataTrigger><DataTrigger Binding="{Binding Overdue}" Value="True"><Setter Property="Foreground" Value="#B54708"/></DataTrigger></Style.Triggers></Style>
   <Style x:Key="SectionTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="18"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,16"/></Style>
   <Style TargetType="Button">
    <Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="BorderBrush" Value="#DCE2EC"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Height" Value="38"/><Setter Property="Padding" Value="14,0"/><Setter Property="FontSize" Value="13"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FontWeight" Value="SemiBold"/>
@@ -61,6 +64,7 @@
   <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#F6F8FC"/><Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="Padding" Value="10,12"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="BorderThickness" Value="0"/></Style>
   <Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="10,0"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell"><Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}"><ContentPresenter VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter></Style>
   <Style x:Key="Surface" TargetType="Border"><Setter Property="Background" Value="White"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="22"/><Setter Property="BorderBrush" Value="#E6EBF3"/><Setter Property="BorderThickness" Value="1"/></Style>
+  <Geometry x:Key="NavServices">M0,0 H18 V18 L15,16 12,18 9,16 6,18 3,16 0,18 Z M4,5 H14 M4,9 H14 M4,13 H10</Geometry>
   <DataTemplate x:Key="BarTemplate"><StackPanel Margin="0,0,0,16"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}" FontSize="13"/><TextBlock Grid.Column="1" Text="{Binding Amount}" FontWeight="SemiBold" Margin="8,0,0,0"/></Grid><Grid Margin="0,7,0,0"><Border Background="#EEF2FA" Height="6" CornerRadius="3"/><Border Background="#4C7DEE" Width="{Binding Width}" Height="6" CornerRadius="3" HorizontalAlignment="Left" MaxWidth="240"/></Grid><TextBlock Text="{Binding Percent}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0"/></StackPanel></DataTemplate>
   <DataTemplate DataType="{x:Type local:MovementEditor}">
    <StackPanel>
@@ -121,5 +125,34 @@
     <CheckBox IsChecked="{Binding ConfirmReplacement}" Margin="0,18,0,4" AutomationProperties.AutomationId="ConfirmRestore"><TextBlock Text="Confirmo que quiero reemplazar toda la contabilidad actual." TextWrapping="Wrap"/></CheckBox>
    </StackPanel>
    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,18,0,10" Visibility="{Binding Busy,Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Status}" FontSize="12" Foreground="#315DA8" Margin="0,10,0,0"/>
+  </StackPanel></DataTemplate>
+  <DataTemplate DataType="{x:Type local:ServiceEditor}"><StackPanel>
+   <TextBlock Text="Nombre" Style="{StaticResource Label}"/><TextBox Text="{Binding Model.Name,UpdateSourceTrigger=PropertyChanged}" MaxLength="100"/>
+   <TextBlock Text="Tipo" Style="{StaticResource Label}"/><ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding Type}"/>
+   <TextBlock Text="Periodicidad" Style="{StaticResource Label}"/><ComboBox ItemsSource="{Binding Frequencies}" SelectedItem="{Binding Frequency}"/>
+   <StackPanel Visibility="{Binding SingleCurrency,Converter={StaticResource BoolVisibility}}"><TextBlock Text="Moneda" Style="{StaticResource Label}"/><ComboBox ItemsSource="{Binding Currencies}" SelectedItem="{Binding Model.Currency}"/></StackPanel>
+   <TextBlock Text="{Binding AmountLabel}" Style="{StaticResource Label}"/><TextBox Text="{Binding Amount,UpdateSourceTrigger=PropertyChanged}"/>
+   <StackPanel Visibility="{Binding IsCard,Converter={StaticResource BoolVisibility}}"><TextBlock Text="Importe habitual en USD (opcional)" Style="{StaticResource Label}"/><TextBox Text="{Binding AmountUsd,UpdateSourceTrigger=PropertyChanged}"/><TextBlock Text="El resumen conserva cargos y pagos independientes en ARS y USD." Foreground="{StaticResource Muted}" FontSize="12" Margin="0,8,0,0"/></StackPanel>
+   <StackPanel Visibility="{Binding IsAnnual,Converter={StaticResource BoolVisibility}}"><TextBlock Text="Mes de renovación anual (1–12)" Style="{StaticResource Label}"/><TextBox Text="{Binding Model.DueMonth}"/></StackPanel>
+   <TextBlock Text="El vencimiento se completa en cada período, cuando lo conozcas." Foreground="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/>
+   <TextBlock Text="Observaciones" Style="{StaticResource Label}"/><TextBox Text="{Binding Model.Notes}" MaxLength="4000"/>
+   <CheckBox Content="Servicio activo" IsChecked="{Binding Model.Active}" Margin="0,16,0,0"/>
+  </StackPanel></DataTemplate>
+  <DataTemplate DataType="{x:Type local:ObligationEditor}"><StackPanel>
+   <TextBlock Text="Período (seleccioná cualquier día del mes)" Style="{StaticResource Label}"/><DatePicker SelectedDate="{Binding Model.Period}" IsEnabled="{Binding NewPeriod}"/>
+   <TextBlock Text="Vencimiento real (opcional)" Style="{StaticResource Label}"/><DatePicker SelectedDate="{Binding Model.Due}"/>
+   <TextBlock Text="{Binding AmountLabel}" Style="{StaticResource Label}"/><TextBox Text="{Binding Amount,UpdateSourceTrigger=PropertyChanged}"/>
+   <StackPanel Visibility="{Binding DualCurrency,Converter={StaticResource BoolVisibility}}"><TextBlock Text="Importe del resumen en USD" Style="{StaticResource Label}"/><TextBox Text="{Binding AmountUsd,UpdateSourceTrigger=PropertyChanged}"/></StackPanel><TextBlock Text="Moneda" Style="{StaticResource Label}"/><TextBlock Text="{Binding Model.Currency}"/>
+   <StackPanel Visibility="{Binding IsCard,Converter={StaticResource BoolVisibility}}"><TextBlock Text="Pago mínimo (opcional)" Style="{StaticResource Label}"/><TextBox Text="{Binding Minimum,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+   <TextBlock Text="Número de cuota (opcional)" Style="{StaticResource Label}"/><TextBox Text="{Binding Installment}"/>
+   <TextBlock Text="Total de cuotas (opcional)" Style="{StaticResource Label}"/><TextBox Text="{Binding Installments}"/>
+   <TextBlock Text="Observaciones" Style="{StaticResource Label}"/><TextBox Text="{Binding Model.Notes}" MaxLength="4000"/>
+  </StackPanel></DataTemplate>
+  <DataTemplate DataType="{x:Type local:ServicePaymentEditor}"><StackPanel>
+   <TextBlock Text="Importe abonado" Style="{StaticResource Label}"/><TextBox Text="{Binding Amount,UpdateSourceTrigger=PropertyChanged}"/>
+   <TextBlock Text="Moneda de la obligación" Style="{StaticResource Label}"/><TextBlock Text="{Binding Currency}"/>
+   <TextBlock Text="Fecha real del pago" Style="{StaticResource Label}"/><DatePicker SelectedDate="{Binding Model.Date}"/>
+   <TextBlock Text="Medio de pago (informativo)" Style="{StaticResource Label}"/><ComboBox ItemsSource="{Binding Methods}" SelectedItem="{Binding Model.Method}"/>
+   <TextBlock Text="Observaciones" Style="{StaticResource Label}"/><TextBox Text="{Binding Model.Notes}" MaxLength="4000"/>
   </StackPanel></DataTemplate>
 </ResourceDictionary>

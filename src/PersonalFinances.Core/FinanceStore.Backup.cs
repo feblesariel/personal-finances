@@ -18,12 +18,12 @@ public sealed partial class FinanceStore
     private static async Task<BackupSnapshot> CaptureBackup(MySqlConnection c,MySqlTransaction tx,string version,IProgress<string>? progress=null)
     {
         var tables=(await c.QueryAsync<(string Name,string Engine)>("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()",transaction:tx)).ToList();
-        string[] known=["cards","categories","periods","movements","audit_log","settings","schema_migrations"];
+        string[] known=["cards","categories","periods","movements","audit_log","settings","schema_migrations","recurring_services","service_obligations","service_payments"];
         if(tables.Count!=known.Length||tables.Any(t=>!known.Contains(t.Name,StringComparer.OrdinalIgnoreCase)||t.Engine!="InnoDB"))
             throw new RuleException("El esquema contiene tablas desconocidas o no transaccionales. No se puede garantizar un respaldo completo; actualizá la aplicación.");
         // The first consistent read establishes the MVCC snapshot for ALL accounting tables.
         var migrations=(await c.QueryAsync<int>("SELECT version FROM schema_migrations ORDER BY version",transaction:tx)).ToArray();
-        if(!migrations.SequenceEqual(new[]{1,2,3}))throw new RuleException("La versión de esta base no es compatible con los respaldos de esta aplicación.");
+        if(!migrations.SequenceEqual(new[]{1,2,3,4,5}))throw new RuleException("La versión de esta base no es compatible con los respaldos de esta aplicación.");
         var cards=(await c.QueryAsync<BackupNamed>("SELECT id,seed_key SeedKey,name,active FROM cards ORDER BY id",transaction:tx)).ToImmutableArray();
         progress?.Report("Leyendo tarjetas y categorías…");
         var categories=(await c.QueryAsync<BackupNamed>("SELECT id,seed_key SeedKey,name,active FROM categories ORDER BY id",transaction:tx)).ToImmutableArray();
@@ -45,7 +45,8 @@ public sealed partial class FinanceStore
             imports.Add(new(setting.Key,e.GetProperty("Batch").GetString()!,e.GetProperty("SourceHash").GetString()!,e.GetProperty("Total").GetDecimal(),
                 e.GetProperty("Lines").Deserialize<ImmutableArray<BackupImportLine>>(BackupValidation.Json),e.GetProperty("ImportedAt").GetDateTimeOffset()));
         }
-        var document=new BackupDocument{ApplicationVersion=version,LedgerId=settings.GetValueOrDefault("ledger_id")??"",Cards=cards,Categories=categories,Periods=periods,Movements=movements,Audit=audit,Imports=imports.ToImmutable()};
+        var services=await ReadServices(c,tx);
+        var document=new BackupDocument{Services=services.Services,ServiceObligations=services.Obligations,ServicePayments=services.Payments,ApplicationVersion=version,LedgerId=settings.GetValueOrDefault("ledger_id")??"",Cards=cards,Categories=categories,Periods=periods,Movements=movements,Audit=audit,Imports=imports.ToImmutable()};
         await Task.Run(()=>BackupValidation.Validate(document));
         return new(document,long.Parse(settings["revision"],System.Globalization.CultureInfo.InvariantCulture));
     }
@@ -58,7 +59,7 @@ public sealed partial class FinanceStore
             throw new RuleException("La base cambió desde la vista previa. Volvé a seleccionar el respaldo para revisar los datos actuales antes de restaurar.");
         progress?.Report("Restaurando dentro de una transacción segura…");
         // DML only: no TRUNCATE, DDL, disabled foreign keys or implicit commits.
-        await c.ExecuteAsync("UPDATE movements SET original_id=NULL; DELETE FROM audit_log; DELETE FROM movements; DELETE FROM periods; DELETE FROM categories; DELETE FROM cards; DELETE FROM settings WHERE `key`='ledger_id' OR `key` LIKE 'import:%';",transaction:tx);
+        await c.ExecuteAsync("DELETE FROM service_payments; DELETE FROM service_obligations; DELETE FROM recurring_services; UPDATE movements SET original_id=NULL; DELETE FROM audit_log; DELETE FROM movements; DELETE FROM periods; DELETE FROM categories; DELETE FROM cards; DELETE FROM settings WHERE `key`='ledger_id' OR `key` LIKE 'import:%';",transaction:tx);
         var b=prepared.Incoming;
         if(b.Cards.Length>0)await c.ExecuteAsync("INSERT INTO cards(id,seed_key,name,active) VALUES(@Id,@SeedKey,@Name,@Active)",b.Cards,tx);
         if(b.Categories.Length>0)await c.ExecuteAsync("INSERT INTO categories(id,seed_key,name,active) VALUES(@Id,@SeedKey,@Name,@Active)",b.Categories,tx);
@@ -68,6 +69,9 @@ public sealed partial class FinanceStore
             VALUES(@Id,@Token,@CardId,@PeriodId,@ManualPeriod,@CategoryId,@Date,@Amount,@Currency,@Refund,NULL,@Description,@Notes,@Version,@CreatedAt,@UpdatedAt,@DeletedAt)
             """,b.Movements,tx);
         foreach(var m in b.Movements.Where(m=>m.OriginalId!=null))await c.ExecuteAsync("UPDATE movements SET original_id=@OriginalId,updated_at=@UpdatedAt WHERE id=@Id",m,tx);
+        if(b.Services.Count>0)await c.ExecuteAsync("INSERT INTO recurring_services(id,name,type,frequency,currency,usual_amount,usual_amount_usd,due_day,due_month,notes,active,card_id,version) VALUES(@Id,@Name,@Type,@Frequency,@Currency,@UsualAmount,@UsualAmountUsd,@DueDay,@DueMonth,@Notes,@Active,@CardId,@Version)",b.Services,tx);
+        if(b.ServiceObligations.Count>0)await c.ExecuteAsync("INSERT INTO service_obligations(id,service_id,period,due,amount,currency,minimum,installment,installments,notes,version) VALUES(@Id,@ServiceId,@Period,@Due,@Amount,@Currency,@Minimum,@Installment,@Installments,@Notes,@Version)",b.ServiceObligations,tx);
+        if(b.ServicePayments.Count>0)await c.ExecuteAsync("INSERT INTO service_payments(id,token,obligation_id,payment_date,amount,method,notes,voided,version) VALUES(@Id,@Token,@ObligationId,@Date,@Amount,@Method,@Notes,@Voided,@Version)",b.ServicePayments,tx);
         if(b.Audit.Length>0)await c.ExecuteAsync("INSERT INTO audit_log(id,entity,entity_id,action,before_json,changed_at) VALUES(@Id,@Entity,@EntityId,@Action,@BeforeJson,@ChangedAt)",b.Audit,tx);
         await c.ExecuteAsync("INSERT INTO settings VALUES('ledger_id',@LedgerId)",b,tx);
         foreach(var manifest in b.Imports)

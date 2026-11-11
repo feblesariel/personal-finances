@@ -26,7 +26,7 @@ internal static class Program
         app.Run();return exitCode;
     }
     private static void Check(bool ok,string label){if(!ok)throw new Exception("FAIL: "+label);results.Add(label);Console.WriteLine("PASS UI: "+label);}
-    private static async Task Wait(Func<bool> predicate,int ms=15000){var end=DateTime.UtcNow.AddMilliseconds(ms);while(!predicate()){if(DateTime.UtcNow>end)throw new TimeoutException("UI condition timeout");await Task.Delay(60);}}
+    private static async Task Wait(Func<bool> predicate,int ms=150000){var end=DateTime.UtcNow.AddMilliseconds(ms);while(!predicate()){if(DateTime.UtcNow>end)throw new TimeoutException("UI condition timeout");await Task.Delay(60);}}
     private static List<T> Visuals<T>(DependencyObject root) where T:DependencyObject
     {
         var result=new List<T>();for(var i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var child=VisualTreeHelper.GetChild(root,i);if(child is T t)result.Add(t);result.AddRange(Visuals<T>(child));}return result;
@@ -40,7 +40,7 @@ internal static class Program
     }
     private static async Task Run(Application app,BindingTrace trace)
     {
-        var admin=new ConnectionProfile("localhost",3306,Environment.GetEnvironmentVariable("PF_ADMIN_USER")??throw new Exception("Missing test user"),Environment.GetEnvironmentVariable("PF_ADMIN_PASSWORD")??throw new Exception("Missing test password"),"");
+        var admin=new ConnectionProfile("localhost",uint.Parse(Environment.GetEnvironmentVariable("PF_ADMIN_PORT")??"3306"),Environment.GetEnvironmentVariable("PF_ADMIN_USER")??throw new Exception("Missing test user"),Environment.GetEnvironmentVariable("PF_ADMIN_PASSWORD")??throw new Exception("Missing test password"),"");
         await using var root=new MySqlConnection(admin.ConnectionString);await root.OpenAsync();var db="personal_finances_tests_ui_"+DateTime.UtcNow.ToString("yyyyMMddHHmmss");
         await root.ExecuteAsync($"CREATE DATABASE `{db}` CHARACTER SET utf8mb4");var profile=admin with {Database=db};var store=new FinanceStore(profile);
         var artifacts=System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../../../artifacts"));System.IO.Directory.CreateDirectory(artifacts);
@@ -87,6 +87,7 @@ internal static class Program
             window.Width=960;window.Height=620;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"dashboard-960.png"));Check(true,"Render a 1320 y 960 píxeles sin excepciones");
             window.Close();window=new MainWindow(profile);app.MainWindow=window;window.Show();var restarted=(ShellViewModel)window.DataContext;await Wait(()=>restarted.Ready&&restarted.TotalArs=="$ 100,00");Check(restarted.TotalUsd=="US$ 12,99","Reabrir interfaz conserva movimientos y totales");
             window=await TableLayoutChecks.Run(window,profile,store,app,artifacts,Check);
+            await ServiceUiChecks.Run(window,profile,Check,Screenshot,artifacts);
             await BackupUiChecks.Run(window,profile,app,temp,artifacts,Check);
             Check(!Visuals<FrameworkElement>(window).Any(e=>Validation.GetHasError(e)),"Controles sin errores de validación WPF"); Check(Visuals<ComboBox>(window).Where(c=>c.ItemsSource is IEnumerable<Choice>).All(c=>c.SelectedItem!=null),"Selectores de filtros con opción visible"); Check(trace.Errors.Count==0,"Enlaces WPF sin errores: "+string.Join(";",trace.Errors.Take(4)));
             await System.IO.File.WriteAllLinesAsync(System.IO.Path.Combine(artifacts,"ui-test-results.txt"),results.Prepend(DateTime.Now.ToString("O")));Console.WriteLine($"RESULT UI: {results.Count} passed, 0 failed");

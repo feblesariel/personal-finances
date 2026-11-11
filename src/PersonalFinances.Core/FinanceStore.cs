@@ -45,7 +45,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
                   CREATE TABLE IF NOT EXISTS audit_log(id BIGINT AUTO_INCREMENT PRIMARY KEY,entity VARCHAR(40) NOT NULL,entity_id BIGINT NOT NULL,action VARCHAR(20) NOT NULL,before_json JSON NULL,changed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
                   INSERT IGNORE INTO settings SELECT 'bootstrap_pending','1' WHERE NOT EXISTS(SELECT 1 FROM cards) AND NOT EXISTS(SELECT 1 FROM categories) AND NOT EXISTS(SELECT 1 FROM movements);
                   INSERT INTO schema_migrations VALUES(1,UTC_TIMESTAMP(6));
-                  """);
+                  """,commandTimeout:120);
             }
             if(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations WHERE version=2")==0)
             {
@@ -68,6 +68,8 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
                 await c.ExecuteAsync("INSERT IGNORE INTO settings VALUES('ledger_id',@id); INSERT INTO schema_migrations VALUES(3,UTC_TIMESTAMP(6));",new {id=Guid.NewGuid().ToString("N")},tx);
                 await tx.CommitAsync();
             }
+            await MigrateServices(c);
+            await MigrateFlexibleServices(c);
         }
         finally
         {
@@ -86,7 +88,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
         var periods=(await c.QueryAsync<Period>(PeriodSql+" ORDER BY start_date DESC",transaction:tx)).ToList();
         var movements=(await c.QueryAsync<Movement>(MovementSql+" ORDER BY m.movement_date DESC,m.id DESC",transaction:tx)).ToList();
         var settings=(await c.QueryAsync<(string Key,string Value)>("SELECT `key`,`value` FROM settings",transaction:tx)).ToDictionary(x=>x.Key,x=>x.Value);
-        await tx.CommitAsync(); return new(cards,cats,periods,movements,settings);
+        var services=await ReadServices(c,tx); await tx.CommitAsync(); return new(cards,cats,periods,movements,settings){Services=services};
     }
     private async Task<T> Write<T>(Func<MySqlConnection,MySqlTransaction,Task<T>> work)
     {

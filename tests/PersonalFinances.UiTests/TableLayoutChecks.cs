@@ -21,8 +21,8 @@ internal static class TableLayoutChecks
     {
         var vm=(ShellViewModel)window.DataContext;vm.Page="Consumos";window.UpdateLayout();
         var grids=InteractionChecks.Visuals<DataGrid>(window);var history=History(window);
-        check(grids.Count==5&&grids.Count(g=>TableLayout.GetKey(g)!=null)==1&&TableLayout.GetKey(history)=="history","Solo Consumos conserva preferencias personalizadas de columnas");
-        check(grids.Where(g=>g!=history).All(g=>!g.CanUserResizeColumns&&!g.CanUserReorderColumns&&!g.CanUserSortColumns),"Tablas sencillas de consulta sin personalización innecesaria");
+        check(grids.Count==7&&grids.Count(g=>TableLayout.GetKey(g)!=null)==1&&TableLayout.GetKey(history)=="history","Solo Consumos conserva preferencias personalizadas de columnas");
+        check(grids.Where(g=>g!=history&&g.Name!="ServicesGrid").All(g=>!g.CanUserResizeColumns&&!g.CanUserReorderColumns&&!g.CanUserSortColumns),"Tablas sencillas de consulta sin personalización innecesaria");
         var defaults=Layout(history);var before=await store.ReadAsync();var revision=before.Revision;var data=JsonSerializer.Serialize(before.Movements);
         history.Columns[0].Width=new(240);history.Columns[1].DisplayIndex=0;history.Columns[2].Visibility=Visibility.Collapsed;history.FrozenColumnCount=1;history.RowHeight=48;
         TableLayout.SetSortChoice(history,"Importe ↓");TableLayout.Save(history);var customized=Layout(history);
