@@ -50,12 +50,13 @@ internal static class Program
         MainWindow? window=null;
         try
         {
-            await SetupChecks.Run(app,profile,root,temp,Check);
+            if(!Environment.GetCommandLineArgs().Contains("--search-probe"))await SetupChecks.Run(app,profile,root,temp,Check);
             await store.InitializeAsync();var s=await store.ReadAsync();var visa=s.Cards.Single(c=>c.Name=="VISA");var master=s.Cards.Single(c=>c.Name=="MASTERCARD");
             foreach(var card in s.Cards)await store.SavePeriodAsync(new(){CardId=card.Id,Name="Resumen noviembre 2026",Start=new(2026,10,21),Closing=new(2026,11,20),Due=new(2026,12,1)});
             LocalConfig.SetExportFolder(temp);
             window=new MainWindow(profile);app.MainWindow=window;window.Show();var vm=(ShellViewModel)window.DataContext;
             await Wait(()=>vm.Ready&&vm.Tiles.Count==2);await Wait(()=>System.IO.File.Exists(System.IO.Path.Combine(temp,"RESUMEN_TARJETAS.txt")));Check(vm.Page=="Inicio","Inicio directo en dashboard");
+            await InteractionChecks.ProbeSearch(window,vm,Check);
             foreach(var page in new[]{"Consumos","Estadísticas","Tarjetas y períodos","Configuración","Inicio"}){vm.Page=page;window.UpdateLayout();await Task.Delay(50);Check(Visuals<TextBlock>(window).Any(t=>t.IsVisible&&t.Text==page),"Pantalla visible: "+page);}
             var task=new TaskCompletionSource();var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(100)};
             timer.Tick+=async(_,_)=>
@@ -80,7 +81,8 @@ internal static class Program
             vm.FilterCurrency="USD";vm.Page="Consumos";Check(vm.History.Count==1&&vm.FilteredUsd=="US$ 12,99"&&vm.FilteredArs=="$ 0,00","Filtros de historial y totales separados");
             vm.ClearFiltersCommand.Execute(null);vm.Page="Estadísticas";vm.StatsCurrency="ARS";Check(vm.CategoryStats.Count==1&&vm.CategoryStats[0].Amount=="$ 100,00","Estadística por categoría refleja edición");
             window.UpdateLayout();Check(Visuals<ComboBox>(window).Where(c=>c.ItemsSource is IEnumerable<Choice>).All(c=>!string.IsNullOrWhiteSpace(c.Text)),"Nombres de filtros disponibles para lectura");
-            window.Width=1100;window.Height=760;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"statistics.png"));
+            await InteractionChecks.Run(window,vm,Check,artifacts);
+            vm.Page="Estadísticas";window.Width=1100;window.Height=760;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"statistics.png"));
             vm.Page="Inicio";window.Width=1320;window.Height=880;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"dashboard.png"));
             window.Width=960;window.Height=620;window.UpdateLayout();Screenshot(window,System.IO.Path.Combine(artifacts,"dashboard-960.png"));Check(true,"Render a 1320 y 960 píxeles sin excepciones");
             window.Close();window=new MainWindow(profile);app.MainWindow=window;window.Show();var restarted=(ShellViewModel)window.DataContext;await Wait(()=>restarted.Ready&&restarted.TotalArs=="$ 100,00");Check(restarted.TotalUsd=="US$ 12,99","Reabrir interfaz conserva movimientos y totales");

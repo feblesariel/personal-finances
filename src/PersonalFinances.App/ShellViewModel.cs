@@ -30,6 +30,17 @@ public sealed class ShellViewModel : Observable
     public ObservableCollection<StatRow> DashboardCategories {get;}=[];public ObservableCollection<StatRow> CategoryStats {get;}=[];public ObservableCollection<StatRow> CardStats {get;}=[];public ObservableCollection<StatRow> PeriodStats {get;}=[];
     public ObservableCollection<Card> Cards {get;}=[];public ObservableCollection<Category> Categories {get;}=[];public ObservableCollection<PeriodDisplay> Periods {get;}=[];
     private readonly ObservableCollection<Choice> cardChoices=[new(0,"Todas las tarjetas")],categoryChoices=[new(0,"Todas las categorías")],periodChoices=[new(0,"Todos los períodos"),new(-1,"Sin período asignado")];
+    private readonly ObservableCollection<Choice> statisticsPeriods=[new(0,"Todos los períodos")];
+    private int statsCard,statsPeriod;
+    public ObservableCollection<Choice> StatisticsPeriodChoices=>statisticsPeriods;
+    public Choice? StatisticsCardFilter {get=>cardChoices.FirstOrDefault(c=>c.Id==StatsCard);set{if(value!=null)StatsCard=value.Id;}}
+    public Choice? StatisticsPeriodFilter {get=>statisticsPeriods.FirstOrDefault(c=>c.Id==StatsPeriod);set{if(value!=null)StatsPeriod=value.Id;}}
+    public int StatsCard {get=>statsCard;set{if(Set(ref statsCard,value)){statsPeriod=0;Changed(nameof(StatsPeriod));Changed(nameof(StatisticsCardFilter));RebuildStatisticsPeriods();UpdateStatistics();}}}
+    public int StatsPeriod {get=>statsPeriod;set{if(Set(ref statsPeriod,value)){Changed(nameof(StatisticsPeriodFilter));UpdateStatistics();}}}
+    public string StatisticsArs {get;private set;}="$ 0,00";
+    public string StatisticsUsd {get;private set;}="US$ 0,00";
+    public bool HasHistoryFilters=>FilterCard!=0||FilterPeriod!=0||FilterCategory!=0||FilterCurrency is "ARS" or "USD"||!string.IsNullOrWhiteSpace(Search);
+    public string HistoryEmptyMessage=>snapshot.Movements.Count==0?"Todavía no hay movimientos registrados.":"No hay resultados para estos filtros. Usá Limpiar filtros para ver todos los movimientos.";
     public ObservableCollection<Choice> CardChoices=>cardChoices;public ObservableCollection<Choice> CategoryChoices=>categoryChoices;public ObservableCollection<Choice> PeriodChoices=>periodChoices;
     public Choice? CardFilter {get=>cardChoices.FirstOrDefault(c=>c.Id==FilterCard);set{if(value!=null)FilterCard=value.Id;}}
     public Choice? CategoryFilter {get=>categoryChoices.FirstOrDefault(c=>c.Id==FilterCategory);set{if(value!=null)FilterCategory=value.Id;}}
@@ -40,6 +51,7 @@ public sealed class ShellViewModel : Observable
         foreach(var d in desired){var existing=choices.FirstOrDefault(c=>c.Id==d.Id);if(existing==null)choices.Add(d);else existing.Name=d.Name;}
     }
     private void RebuildPeriodChoices(){SyncChoices(periodChoices,[new(0,"Todos los períodos"),new(-1,"Sin período asignado"),..snapshot.Periods.Where(p=>FilterCard==0||p.CardId==FilterCard).Select(p=>new Choice(p.Id,snapshot.Cards.Single(c=>c.Id==p.CardId).Name+" · "+p.Name))]);Changed(nameof(PeriodFilter));}
+    private void RebuildStatisticsPeriods(){SyncChoices(statisticsPeriods,[new(0,"Todos los períodos"),..snapshot.Periods.Where(p=>StatsCard==0||p.CardId==StatsCard).Select(p=>new Choice(p.Id,snapshot.Cards.Single(c=>c.Id==p.CardId).Name+" · "+p.Name))]);Changed(nameof(StatisticsPeriodFilter));}
     private int filterCard,filterCategory,filterPeriod;private string filterCurrency="Todas",search="",sort="Fecha ↓",dashboardCurrency="ARS";
     public int FilterCard {get=>filterCard;set{if(Set(ref filterCard,value)){filterPeriod=0;Changed(nameof(FilterPeriod));Changed(nameof(CardFilter));RebuildPeriodChoices();ApplyFilters();}}}
     public int FilterCategory {get=>filterCategory;set{if(Set(ref filterCategory,value)){Changed(nameof(CategoryFilter));ApplyFilters();}}}public int FilterPeriod {get=>filterPeriod;set{if(Set(ref filterPeriod,value)){Changed(nameof(PeriodFilter));ApplyFilters();}}}
@@ -48,10 +60,11 @@ public sealed class ShellViewModel : Observable
     public string[] CurrencyChoices {get;}=["Todas","ARS","USD"];public string[] ChartCurrencyChoices {get;}=["ARS","USD"];public string[] SortChoices {get;}=["Fecha ↓","Fecha ↑","Importe ↓","Importe ↑"];
     private string totalArs="$ 0,00",totalUsd="US$ 0,00",filteredArs="$ 0,00",filteredUsd="US$ 0,00",pending="",filterSummary="",statsCurrency="ARS";
     public string TotalArs {get=>totalArs;set=>Set(ref totalArs,value);}public string TotalUsd {get=>totalUsd;set=>Set(ref totalUsd,value);}public string FilteredArs {get=>filteredArs;set=>Set(ref filteredArs,value);}public string FilteredUsd {get=>filteredUsd;set=>Set(ref filteredUsd,value);}public string Pending {get=>pending;set=>Set(ref pending,value);}public string FilterSummary {get=>filterSummary;set=>Set(ref filterSummary,value);}
-    public string StatsCurrency {get=>statsCurrency;set{if(Set(ref statsCurrency,value))ApplyFilters();}}
+    public string StatsCurrency {get=>statsCurrency;set{if(Set(ref statsCurrency,value is "USD"?"USD":"ARS"))UpdateStatistics();}}
     public Movement? SelectedMovement {get;set;}public Card? SelectedCard {get;set;}public Category? SelectedCategory {get;set;}public PeriodDisplay? SelectedPeriod {get;set;}
     public ICommand NavigateCommand {get;}public ICommand NewCommand {get;}public ICommand EditCommand {get;}public ICommand DeleteCommand {get;}public ICommand RetryCommand {get;}public ICommand ExportCommand {get;}public ICommand ImportCommand {get;}public ICommand NewCardCommand {get;}public ICommand EditCardCommand {get;}public ICommand NewCategoryCommand {get;}public ICommand EditCategoryCommand {get;}public ICommand NewPeriodCommand {get;}public ICommand EditPeriodCommand {get;}public ICommand NextPeriodCommand {get;}public ICommand ExportFolderCommand {get;}public ICommand LogsCommand {get;}public ICommand ClearFiltersCommand {get;}
     public ICommand ReconfigureCommand {get;}public ICommand TestConnectionCommand {get;}
+    public ICommand ClearStatisticsFiltersCommand {get;}
     private AsyncCommand Command(Func<Task> action)=>new(action,e=>Notice=LocalConfig.Friendly(e));
     public ShellViewModel(IDialogs dialogs,ConnectionProfile? profile=null)
     {
@@ -64,6 +77,7 @@ public sealed class ShellViewModel : Observable
         ExportFolderCommand=Command(async()=>{if(dialogs.Show(new ExportEditor(dialogs,LocalConfig.ResolveExportPath(snapshot.Settings.GetValueOrDefault("export_path"))))){Changed(nameof(ExportPath));await Export(true);}});
         LogsCommand=new RelayCommand(_=>{System.IO.Directory.CreateDirectory(LocalConfig.Folder);dialogs.OpenFolder(LocalConfig.Folder);});
         ClearFiltersCommand=new RelayCommand(_=>{FilterCard=0;FilterPeriod=0;FilterCategory=0;FilterCurrency="Todas";Search="";});
+        ClearStatisticsFiltersCommand=new RelayCommand(_=>{StatsCard=0;StatsPeriod=0;StatsCurrency="ARS";});
     }
     public async Task InitializeAsync()
     {
@@ -88,8 +102,8 @@ public sealed class ShellViewModel : Observable
         }
         Replace(Cards,snapshot.Cards);Replace(Categories,snapshot.Categories);Replace(Periods,snapshot.Periods.Select(p=>new PeriodDisplay(p,snapshot.Cards.Single(c=>c.Id==p.CardId).Name,$"{p.Start:dd/MM/yyyy} — {p.Closing:dd/MM/yyyy}",p.Due.ToString("dd/MM/yyyy"))));
         SyncChoices(cardChoices,[new(0,"Todas las tarjetas"),..snapshot.Cards.Select(c=>new Choice(c.Id,c.Name))]);SyncChoices(categoryChoices,[new(0,"Todas las categorías"),..snapshot.Categories.Select(c=>new Choice(c.Id,c.Name))]);
-        Changed(nameof(CardFilter));Changed(nameof(CategoryFilter));RebuildPeriodChoices();Changed(nameof(ExportPath));Changed(nameof(Connection));
-        UpdateDashboard();ApplyFilters();
+        Changed(nameof(CardFilter));Changed(nameof(CategoryFilter));RebuildPeriodChoices();Changed(nameof(StatisticsCardFilter));RebuildStatisticsPeriods();Changed(nameof(ExportPath));Changed(nameof(Connection));
+        UpdateDashboard();ApplyFilters();UpdateStatistics();
         var unassigned=snapshot.Movements.Count(m=>m.PeriodId==null);
         var manualOutside=snapshot.Movements.Count(m=>m.ManualPeriod&&snapshot.Periods.Any(p=>p.Id==m.PeriodId&&(m.Date<p.Start||m.Date>p.Closing)));
         var needs=snapshot.Cards.Count(c=>c.Active&&(snapshot.Current(c.Id)==null||snapshot.Current(c.Id)!.Closing<DateTime.Today));
@@ -106,13 +120,21 @@ public sealed class ShellViewModel : Observable
     {
         IEnumerable<Movement> q=snapshot.Movements;
         if(FilterCard>0)q=q.Where(m=>m.CardId==FilterCard);if(FilterPeriod>0)q=q.Where(m=>m.PeriodId==FilterPeriod);if(FilterPeriod==-1)q=q.Where(m=>m.PeriodId==null);if(FilterCategory>0)q=q.Where(m=>m.CategoryId==FilterCategory);if(FilterCurrency is "ARS" or "USD")q=q.Where(m=>m.Currency==FilterCurrency);
-        if(!string.IsNullOrWhiteSpace(Search))q=q.Where(m=>m.Description.Contains(Search,StringComparison.OrdinalIgnoreCase)||m.Notes.Contains(Search,StringComparison.OrdinalIgnoreCase));
+        var term=Search.Trim();if(term.Length>0)q=q.Where(m=>m.Description.Contains(term,StringComparison.OrdinalIgnoreCase)||m.Notes.Contains(term,StringComparison.OrdinalIgnoreCase));
         return Sort switch{"Fecha ↑"=>q.OrderBy(m=>m.Date).ThenBy(m=>m.Id).ToList(),"Importe ↓"=>q.OrderByDescending(m=>m.Signed).ToList(),"Importe ↑"=>q.OrderBy(m=>m.Signed).ToList(),_=>q.OrderByDescending(m=>m.Date).ThenByDescending(m=>m.Id).ToList()};
     }
     private void ApplyFilters()
     {
-        var rows=Filter();Replace(History,rows);FilteredArs=Money.Format(rows.Where(m=>m.Currency=="ARS").Sum(m=>m.Signed));FilteredUsd=Money.Format(rows.Where(m=>m.Currency=="USD").Sum(m=>m.Signed),"USD");FilterSummary=$"{rows.Count} movimientos · total neto del filtro";
-        var currency=FilterCurrency is "ARS" or "USD"?FilterCurrency:StatsCurrency;var stats=rows.Where(m=>m.Currency==currency).ToList();
+        var rows=Filter();Replace(History,rows);FilteredArs=Money.Format(rows.Where(m=>m.Currency=="ARS").Sum(m=>m.Signed));FilteredUsd=Money.Format(rows.Where(m=>m.Currency=="USD").Sum(m=>m.Signed),"USD");
+        FilterSummary=HasHistoryFilters?$"{rows.Count} de {snapshot.Movements.Count} movimientos · filtros activos":$"{rows.Count} movimientos · total neto del filtro";
+        Changed(nameof(HasHistoryFilters));Changed(nameof(HistoryEmptyMessage));
+    }
+    private void UpdateStatistics()
+    {
+        var rows=snapshot.Movements.Where(m=>(StatsCard==0||m.CardId==StatsCard)&&(StatsPeriod==0||m.PeriodId==StatsPeriod)).ToList();
+        StatisticsArs=Money.Format(rows.Where(m=>m.Currency=="ARS").Sum(m=>m.Signed));StatisticsUsd=Money.Format(rows.Where(m=>m.Currency=="USD").Sum(m=>m.Signed),"USD");
+        Changed(nameof(StatisticsArs));Changed(nameof(StatisticsUsd));
+        var currency=StatsCurrency;var stats=rows.Where(m=>m.Currency==currency).ToList();
         Replace(CategoryStats,Bars(stats,m=>m.CategoryName,currency));Replace(CardStats,Bars(stats,m=>m.CardName,currency));
         var periodRows=stats.Where(m=>m.PeriodId!=null).GroupBy(m=>m.PeriodId).OrderBy(g=>snapshot.Periods.Single(p=>p.Id==g.Key).Start).ToList();
         var max=periodRows.Select(g=>Math.Abs(g.Sum(m=>m.Signed))).DefaultIfEmpty(0).Max();

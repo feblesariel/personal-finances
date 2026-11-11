@@ -67,9 +67,9 @@ Los períodos incluyen inicio y cierre; no pueden superponerse para una tarjeta.
 
 Los reintegros se cargan en **Detalles adicionales**, descuentan del neto y pueden vincularse con un consumo de igual tarjeta y moneda. Historial permite filtrar, buscar, editar y eliminar con confirmación; las eliminaciones son lógicas y las ediciones tienen auditoría. Desactivar tarjetas o categorías conserva el historial.
 
-**Restablecer tabla** recupera columnas y clasificación originales y elimina solo sus preferencias visuales. **Limpiar filtros** conserva la disposición de la tabla. Las preferencias persisten entre aperturas.
+En **Consumos**, **Restablecer tabla** recupera columnas y clasificación originales y elimina solo sus preferencias visuales. Es la única tabla personalizable. Las tablas sencillas de consulta conservan un diseño fijo. **Limpiar filtros** conserva la disposición de Consumos; sus preferencias persisten entre aperturas. Estadísticas usa filtros independientes de tarjeta, período y moneda (ARS/USD), sin búsqueda ni categoría.
 
-La importación TXT ofrece una vista previa editable; duplicados y líneas ambiguas requieren revisión. Las categorías son sugerencias. `REFUND` en el importador genérico indica un reintegro acreditado: si solo es una devolución pendiente, revisá y corregí el tipo a consumo y conservá la anotación antes de importar.
+Las utilidades de importación TXT se conservan internamente para mantenimiento y pruebas, sin una sección de importación en la interfaz. Los movimientos importados anteriormente permanecen intactos.
 
 ## Exportación del resumen
 

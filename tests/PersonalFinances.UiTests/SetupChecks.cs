@@ -41,7 +41,8 @@ internal static class SetupChecks
                 Fill(w,"Host",p.Host);Fill(w,"Port",p.Port.ToString());Fill(w,"User",p.User);Fill(w,"Database",p.Database);Visuals<PasswordBox>(w).Single().Password=p.Password;
                 vm.TestCommand.Execute(null);await Wait(()=>!vm.Busy&&vm.Status.Length>0);
                 check(vm.MissingDatabase,"Interfaz prueba conexión y ofrece crear una base inexistente");
-                Visuals<CheckBox>(w).Single(c=>c.Content?.ToString()?.StartsWith("Crear la base")==true).IsChecked=true;Save(w);await Wait(()=>!w.IsVisible);
+                Visuals<CheckBox>(w).Single(c=>c.Content?.ToString()?.StartsWith("Crear la base")==true).IsChecked=true;Save(w);await Wait(()=>!vm.Busy);
+                if(w.IsVisible&&vm.Error.Length>0)throw new Exception("Guardar conexión: "+vm.Error);await Wait(()=>!w.IsVisible);
             });
             window=new MainWindow();app.MainWindow=window;window.Show();await setup;
             var shell=(ShellViewModel)window.DataContext;await Wait(()=>shell.Ready&&shell.Tiles.Count==2);
