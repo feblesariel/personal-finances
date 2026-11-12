@@ -37,7 +37,7 @@ public sealed class ServiceEntryEditor : EditorViewModel
         Amount=entry.Confirmed?entry.Obligation!.Amount.ToString("N2",Money.Ar):"";Due=entry.Obligation?.Due;
         ResetPaymentInput();
         HistoryCommand=new AsyncCommand(async()=>{if(Busy)return;dialogs.Show(new ServicePaymentsEditor(store,this.entry,()=>Task.CompletedTask,dialogs));await Reload();},e=>Error=LocalConfig.Friendly(e));
-        GeneralCommand=new AsyncCommand(async()=>{if(Busy)return;if(dialogs.Show(new ServiceEditor(store,await store.ReadAsync(),this.entry.Service)))Close();},e=>Error=LocalConfig.Friendly(e));
+        GeneralCommand=new AsyncCommand(async()=>{if(Busy)return;if(dialogs.Show(new ServiceEditor(store,await store.ReadAsync(),this.entry.Service,this.entry)))Close();},e=>Error=LocalConfig.Friendly(e));
         DeleteCommand=new RelayCommand(_=>{if(Busy)return;if(dialogs.Show(new DeleteServiceEditor(store,this.entry.Service,dialogs))){Deleted=true;Close();}});
         RenewCommand=new RelayCommand(_=>{if(Busy)return;var renewal=this.entry.History.FirstOrDefault(r=>r.Obligation.Period==this.entry.Month&&r.Obligation.Id!=this.entry.Obligation?.Id&&r.Obligation.Currency==(this.entry.Service.Type=="Tarjeta de crédito"?"ARS":this.entry.Service.Currency));this.entry=this.entry with{Obligation=renewal?.Obligation,Payments=renewal?.Payments??[],CoverageStart=null,CoverageEnd=null,RenewalRequired=true};Amount=renewal?.Obligation.AmountConfirmed==true?renewal.Obligation.Amount.ToString("N2",Money.Ar):"";ResetPaymentInput();Due=null;token=Guid.NewGuid().ToString("N");Changed(nameof(Coverage));Changed(nameof(CanRenew));Subtitle="Renovación anual. Se conserva el pago anterior.";Changed(nameof(Subtitle));});
     }

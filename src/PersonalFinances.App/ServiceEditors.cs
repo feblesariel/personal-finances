@@ -4,6 +4,7 @@ namespace PersonalFinances.App;
 public sealed class ServiceEditor : EditorViewModel
 {
     private readonly FinanceStore store;
+    private readonly ServiceSheetEntry? sheetEntry;
     public RecurringService Model {get;}
     public string Amount {get;set;}
     public string AmountUsd {get;set;}="";
@@ -12,18 +13,21 @@ public sealed class ServiceEditor : EditorViewModel
     public bool IsAnnual=>Frequency=="Anual";
     public string Frequency {get=>Model.Frequency;set{Model.Frequency=value;Changed();Changed(nameof(IsAnnual));}}
     public string AmountLabel=>IsCard?"Importe habitual en ARS (opcional)":"Importe habitual (opcional)";
-    public string Type {get=>Model.Type;set{Model.Type=value;Changed();Changed(nameof(IsCard));Changed(nameof(SingleCurrency));Changed(nameof(AmountLabel));}}
+    public string Type {get=>Model.Type;set{Model.Type=value;Changed();Changed(nameof(IsCard));Changed(nameof(SingleCurrency));Changed(nameof(AmountLabel));Changed(nameof(ShowCurrencyCorrection));}}
     public string[] Types=>ServiceRules.Types;
     public string[] Frequencies {get;}=["Mensual","Anual"];
     public string[] Currencies {get;}=["ARS","USD"];
+    public string Currency {get=>Model.Currency;set{if(Model.Currency==value)return;Model.Currency=value;Changed();Changed(nameof(ShowCurrencyCorrection));}}
+    public bool ApplyCurrencyToPeriod {get;set;}=true;
+    public bool ShowCurrencyCorrection=>SingleCurrency&&sheetEntry?.Service.Type!="Tarjeta de crédito"&&sheetEntry?.Obligation is {} obligation&&obligation.Currency!=Model.Currency;
 
-    public ServiceEditor(FinanceStore store,Snapshot snapshot,RecurringService? model=null)
+    public ServiceEditor(FinanceStore store,Snapshot snapshot,RecurringService? model=null,ServiceSheetEntry? sheetEntry=null)
     {
-        this.store=store;Model=model is null?new():model with{};
+        this.store=store;this.sheetEntry=sheetEntry;Model=model is null?new():model with{};
         AmountUsd=Model.UsualAmountUsd?.ToString("N2",Money.Ar)??"";Amount=Model.UsualAmount?.ToString("N2",Money.Ar)??"";Title=model==null?"Agregar servicio":"Editar servicio";Subtitle="Lo cargás una sola vez. Cada mes conserva sus importes y pagos; desactivar conserva el historial.";
     }
     public static decimal ParseZero(string text)=>decimal.TryParse(text,System.Globalization.NumberStyles.Number,Money.Ar,out var n)&&n==0?0:Money.Parse(text);
-    protected override async Task Save(){if(IsCard)Model.Currency="ARS";Model.UsualAmount=string.IsNullOrWhiteSpace(Amount)?null:ParseZero(Amount);var wasNew=Model.Id==0;Model.Id=await store.SaveServiceAsync(Model);if(!wasNew)Model.Version++;Close();}
+    protected override async Task Save(){if(IsCard)Model.Currency="ARS";Model.UsualAmount=string.IsNullOrWhiteSpace(Amount)?null:ParseZero(Amount);var wasNew=Model.Id==0;var correction=ShowCurrencyCorrection&&ApplyCurrencyToPeriod?new ServiceCurrencyCorrection(sheetEntry!.Obligation!,ServiceSheet.PaymentStamp(sheetEntry.RecordedPayments),sheetEntry.Month):null;Model.Id=await store.SaveServiceAsync(Model,correction);if(!wasNew)Model.Version++;Close();}
 }
 public sealed class ObligationEditor : EditorViewModel
 {

@@ -127,6 +127,8 @@ La planilla conserva su diseño compacto, pero es **sólo lectura**. Un clic sel
 - **PENDIENTE / PARCIAL / PAGADO:** calculados con los pagos reales.
 - Vencido y mínimo cubierto son indicadores discretos; cubrir el mínimo no cancela el saldo.
 
+Desde **1.7.2**, cambiar Moneda en **Datos del servicio** permite corregir también la obligación de la fila y sus pagos, con una opción visible activada por defecto. Se conservan importes, fechas, IDs, notas y medios de pago: se corrige la moneda declarada, sin hacer conversiones. También se actualizan los períodos futuros sin importe ni pagos; los demás períodos históricos mantienen su moneda. Para una suscripción anual se corrige la obligación que cubre el mes consultado, conservando su vigencia y su único pago. La operación es transaccional y auditada, valida versiones y pagos concurrentes, refresca la tabla y se refleja en TXT y respaldos. Desmarcar la opción permite cambiar sólo la configuración para períodos nuevos. Los resúmenes de tarjetas de Servicios siguen expresados en ARS.
+
 **Nuevo período** conserva los servicios activos y comienza sin importes confirmados ni pagos copiados. Los meses anteriores y los servicios inactivos conservan su historial. Cada tarjeta ocupa una fila ARS con el importe final ingresado manualmente; los antiguos USD siguen archivados, sin conversiones ni mezcla con consumos.
 
 ### Servicios anuales

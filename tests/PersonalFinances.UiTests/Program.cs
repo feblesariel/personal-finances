@@ -50,12 +50,14 @@ internal static class Program
         MainWindow? window=null;
         try
         {
-            if(!Environment.GetCommandLineArgs().Contains("--search-probe"))await SetupChecks.Run(app,profile,root,temp,Check);
+            var currencyProbe=Environment.GetCommandLineArgs().Contains("--currency-probe");
+            if(!Environment.GetCommandLineArgs().Contains("--search-probe")&&!currencyProbe)await SetupChecks.Run(app,profile,root,temp,Check);
             await store.InitializeAsync();var s=await store.ReadAsync();var visa=s.Cards.Single(c=>c.Name=="VISA");var master=s.Cards.Single(c=>c.Name=="MASTERCARD");
             foreach(var card in s.Cards)await store.SavePeriodAsync(new(){CardId=card.Id,Name="Resumen noviembre 2026",Start=new(2026,10,21),Closing=new(2026,11,20),Due=new(2026,12,1)});
             LocalConfig.SetExportFolder(temp);
             window=new MainWindow(profile);app.MainWindow=window;window.Show();var vm=(ShellViewModel)window.DataContext;
             await Wait(()=>vm.Ready&&vm.Tiles.Count==2);await Wait(()=>System.IO.File.Exists(System.IO.Path.Combine(temp,"RESUMEN_TARJETAS.txt")));Check(vm.Page=="Inicio","Inicio directo en dashboard");
+            if(currencyProbe){await ServiceCurrencyUiChecks.Run(window,profile,Check,Screenshot,artifacts);Check(trace.Errors.Count==0,"Moneda: enlaces WPF sin errores");Console.WriteLine($"RESULT CURRENCY UI: {results.Count} passed, 0 failed");return;}
             await InteractionChecks.ProbeSearch(window,vm,Check);
             foreach(var page in new[]{"Consumos","Estadísticas","Tarjetas y períodos","Configuración","Inicio"}){vm.Page=page;window.UpdateLayout();await Task.Delay(50);Check(Visuals<TextBlock>(window).Any(t=>t.IsVisible&&t.Text==page),"Pantalla visible: "+page);}
             var task=new TaskCompletionSource();var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(100)};
@@ -88,6 +90,7 @@ internal static class Program
             window.Close();window=new MainWindow(profile);app.MainWindow=window;window.Show();var restarted=(ShellViewModel)window.DataContext;await Wait(()=>restarted.Ready&&restarted.TotalArs=="$ 100,00");Check(restarted.TotalUsd=="US$ 12,99","Reabrir interfaz conserva movimientos y totales");
             window=await TableLayoutChecks.Run(window,profile,store,app,artifacts,Check);
             await ServiceUiChecks.Run(window,profile,Check,Screenshot,artifacts);
+            await ServiceCurrencyUiChecks.Run(window,profile,Check,Screenshot,artifacts);
             await BackupUiChecks.Run(window,profile,app,temp,artifacts,Check);
             Check(!Visuals<FrameworkElement>(window).Any(e=>Validation.GetHasError(e)),"Controles sin errores de validación WPF"); Check(Visuals<ComboBox>(window).Where(c=>c.ItemsSource is IEnumerable<Choice>).All(c=>c.SelectedItem!=null),"Selectores de filtros con opción visible"); Check(trace.Errors.Count==0,"Enlaces WPF sin errores: "+string.Join(";",trace.Errors.Take(4)));
             await System.IO.File.WriteAllLinesAsync(System.IO.Path.Combine(artifacts,"ui-test-results.txt"),results.Prepend(DateTime.Now.ToString("O")));Console.WriteLine($"RESULT UI: {results.Count} passed, 0 failed");

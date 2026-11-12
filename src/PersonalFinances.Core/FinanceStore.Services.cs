@@ -18,15 +18,16 @@ public sealed partial class FinanceStore
             INSERT INTO schema_migrations VALUES(4,UTC_TIMESTAMP(6));
             """,commandTimeout:120);
     }
-    public Task<int> SaveServiceAsync(RecurringService s)=>Write(async(c,t)=>
+    public Task<int> SaveServiceAsync(RecurringService s,ServiceCurrencyCorrection? currencyCorrection=null)=>Write(async(c,t)=>
     {
         ServiceRules.Validate(s);
         if(s.CardId!=null)ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM cards WHERE id=@CardId",s,t)==1,"Tarjeta inexistente.");
-        if(s.Id==0)return await c.ExecuteScalarAsync<int>("INSERT INTO recurring_services(name,type,frequency,currency,usual_amount,usual_amount_usd,due_day,due_month,notes,active,card_id) VALUES(@Name,@Type,@Frequency,@Currency,@UsualAmount,@UsualAmountUsd,@DueDay,@DueMonth,@Notes,@Active,@CardId); SELECT LAST_INSERT_ID();",s,t);
+        if(s.Id==0){ServiceRules.Require(currencyCorrection==null,"Una corrección de moneda requiere un servicio existente.");return await c.ExecuteScalarAsync<int>("INSERT INTO recurring_services(name,type,frequency,currency,usual_amount,usual_amount_usd,due_day,due_month,notes,active,card_id) VALUES(@Name,@Type,@Frequency,@Currency,@UsualAmount,@UsualAmountUsd,@DueDay,@DueMonth,@Notes,@Active,@CardId); SELECT LAST_INSERT_ID();",s,t);}
         var old=await c.QuerySingleAsync<RecurringService>(ServiceSql+" WHERE id=@Id",s,t);
         ServiceRules.Require(old.Version==s.Version,"El servicio cambió. Actualizá antes de editar.");
         if(s.Type!="Tarjeta de crédito")ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM (SELECT period FROM service_obligations WHERE service_id=@Id GROUP BY period HAVING COUNT(*)>1) pairs",s,t)==0,"Este servicio tiene períodos en ambas monedas; conservá el tipo Tarjeta de crédito.");
         if(s.Type!="Tarjeta de crédito")ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM service_obligations WHERE service_id=@Id AND minimum IS NOT NULL",s,t)==0,"Con mínimos registrados, conservá el tipo Tarjeta de crédito.");
+        if(currencyCorrection!=null)await CorrectServiceCurrency(c,t,old,s,currencyCorrection);
         await Audit(c,t,"recurring_services",s.Id,"edit",old);
         await c.ExecuteAsync("UPDATE recurring_services SET name=@Name,type=@Type,frequency=@Frequency,currency=@Currency,usual_amount=@UsualAmount,usual_amount_usd=@UsualAmountUsd,due_day=@DueDay,due_month=@DueMonth,notes=@Notes,active=@Active,card_id=@CardId,version=version+1 WHERE id=@Id",s,t);return s.Id;
     });

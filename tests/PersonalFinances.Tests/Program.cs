@@ -88,6 +88,7 @@ try
     await ServiceTests.Run(storeTest,Check);
     await SheetTests.Run(storeTest,Check);
     await ServiceOperationTests.Run(storeTest,temp,Check);
+    await ServiceCurrencyTests.Run(storeTest,temp,Check);
     await BackupTests.Run(root,admin,temp,Check);
     Console.WriteLine($"RESULT: {results.Count} passed, 0 failed; isolated database {db}");
     var output=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../artifacts/test-results.txt"));Directory.CreateDirectory(Path.GetDirectoryName(output)!);await File.WriteAllLinesAsync(output,results.Prepend(DateTime.Now.ToString("O")).Append($"{results.Count} passed; 0 failed; test database removed after run"));
