@@ -3,6 +3,12 @@ using Dapper;
 using MySqlConnector;
 using PersonalFinances.Core;
 
+if(args.Contains("--report-only"))
+{
+    var passed=0;ReportFormattingTests.Run((ok,label)=>{if(!ok)throw new Exception("FAIL: "+label);Console.WriteLine("PASS: "+label);passed++;});
+    Console.WriteLine($"RESULT REPORT: {passed} passed, 0 failed; no database connections");return;
+}
+
 var password=Environment.GetEnvironmentVariable("PF_ADMIN_PASSWORD")??throw new Exception("Definí PF_ADMIN_PASSWORD solo para este proceso.");
 var admin=new ConnectionProfile("localhost",uint.Parse(Environment.GetEnvironmentVariable("PF_ADMIN_PORT")??"3306"),Environment.GetEnvironmentVariable("PF_ADMIN_USER")??throw new Exception("Definí PF_ADMIN_USER para las pruebas."),password);
 var db="personal_finances_tests_"+DateTime.UtcNow.ToString("yyyyMMddHHmmss");
@@ -17,6 +23,7 @@ async Task<Movement> Find(long id)=>(await storeTest.ReadAsync()).Movements.Sing
 Movement New(int card,int cat,decimal amount,string currency,DateTime date,bool refund=false,long? original=null)=>new(){CardId=card,CategoryId=cat,Amount=amount,Currency=currency,Date=date,Refund=refund,OriginalId=original,Description="Prueba",Notes="Integración aislada"};
 try
 {
+    ReportFormattingTests.Run(Check);
     await storeTest.InitializeAsync();await storeTest.InitializeAsync();var s=await storeTest.ReadAsync();
     Check(s.Cards.Count==2&&s.Categories.Count==12,"Inicialización y migraciones idempotentes");
     Check(LocalConfig.ResolveExportPath()==null&&!LocalConfig.Preferences().LegacyExportPathMigrated,"Leer una pantalla antes de conectar no pierde la migración de la carpeta anterior");
@@ -89,7 +96,9 @@ try
     await SheetTests.Run(storeTest,Check);
     await ServiceOperationTests.Run(storeTest,temp,Check);
     await ServiceCurrencyTests.Run(storeTest,temp,Check);
+    await SimpleServicesTests.Run(storeTest,temp,Check);
     await BackupTests.Run(root,admin,temp,Check);
+    await ExportFileNameTests.Run(storeTest,temp,Check);
     Console.WriteLine($"RESULT: {results.Count} passed, 0 failed; isolated database {db}");
     var output=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../artifacts/test-results.txt"));Directory.CreateDirectory(Path.GetDirectoryName(output)!);await File.WriteAllLinesAsync(output,results.Prepend(DateTime.Now.ToString("O")).Append($"{results.Count} passed; 0 failed; test database removed after run"));
 }

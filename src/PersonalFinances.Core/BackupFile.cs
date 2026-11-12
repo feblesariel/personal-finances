@@ -45,7 +45,7 @@ internal static class BackupFile
             using(var json=JsonDocument.Parse(plain))
             {
                 var e=json.RootElement;
-                if(e.TryGetProperty("BackupFormatVersion",out var v)&&v.GetInt32() is 2 or 3 or 4 or 5)
+                if(e.TryGetProperty("BackupFormatVersion",out var v)&&v.GetInt32() is 2 or 3 or 4 or 5 or 6)
                     foreach(var collectionName in (v.GetInt32()>=4?new[]{"Services","ServiceObligations","ServicePayments","ServiceMonths"}:new[]{"Services","ServiceObligations","ServicePayments"}))
                         if(!e.TryGetProperty(collectionName,out var collection)||collection.ValueKind!=JsonValueKind.Array)throw new RuleException("Faltan colecciones de servicios en el respaldo.");
             }

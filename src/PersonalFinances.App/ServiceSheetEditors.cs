@@ -6,8 +6,8 @@ public sealed class ServiceMonthEditor : EditorViewModel
 {
     private readonly FinanceStore store;
     public DateTime Month {get;set;}
-    public ServiceMonthEditor(FinanceStore store,DateTime proposed){this.store=store;Month=proposed;Title="Nuevo período";Subtitle="Se conserva la lista de servicios. Los importes y pagos comienzan vacíos.";SaveLabel="Crear período";}
-    protected override async Task Save(){Month=ServiceSheet.Month(Month);await store.CreateServiceMonthAsync(Month);Close();}
+    public ServiceMonthEditor(FinanceStore store,DateTime proposed){this.store=store;Month=proposed;Title="Nuevo período";Subtitle="Los mensuales comienzan pendientes. Los anuales conservan lo abonado.";SaveLabel="Crear período";}
+    protected override async Task Save(){Month=ServiceSheet.Month(Month);await store.CreateSimpleServiceMonthAsync(Month);Close();}
 }
 public sealed record SheetPaymentItem(ServicePayment Payment,string Currency)
 {

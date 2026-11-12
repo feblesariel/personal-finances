@@ -30,7 +30,7 @@ internal static class SheetTests
         check(legacyRow.LegacyWarning&&legacyRow.Currency=="ARS"&&legacyRow.Paid==0&&legacyRow.Legacy.Single().Paid==5,"Planilla: USD previo se conserva con advertencia y no se suma a ARS");
         check(original.SequenceEqual((await store.CaptureBackupAsync("test")).Document.Movements),"Planilla: ninguna edición modifica consumos de tarjetas");
         var report=TextReport.Render(await store.ReadAsync(),month);
-        check(report.Contains("Exigible:")&&report.Contains("Abonado:")&&!report.Contains("Pago desde planilla mensual"),"Planilla: TXT compacto distingue exigible y abonado sin historial extenso");
+        check(report.Contains("PAGADO")&&!report.Contains("Exigible:")&&!report.Contains("Pago desde planilla mensual"),"Planilla: TXT compacto muestra el pago sin detalle financiero");
         await store.SaveServiceAsync(monthly with{Frequency="Anual",DueMonth=2});
         check((await Row(monthly.Id)).Paid==22554.99m,"Planilla: cambiar periodicidad conserva importes y pagos históricos");
         var added=await store.SaveServiceAsync(new(){Name="Servicio incorporado después"});

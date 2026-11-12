@@ -72,6 +72,7 @@ public sealed partial class FinanceStore(ConnectionProfile profile)
             await MigrateFlexibleServices(c);
             await MigrateServiceSheet(c);
             await MigrateNullableServiceAmount(c);
+            await MigrateSimpleServices(c);
         }
         finally
         {

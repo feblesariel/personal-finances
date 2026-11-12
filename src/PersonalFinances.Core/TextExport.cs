@@ -3,6 +3,7 @@ using System.Text;
 namespace PersonalFinances.Core;
 public static class TextReport
 {
+    public const int FormatVersion=2;
     public static string Render(Snapshot s,DateTime now,string serviceSort="ServiceId:Ascending")
     {
         var b=new StringBuilder(); b.AppendLine("PERSONAL FINANCES").AppendLine("Actualizado: "+now.ToString("dd/MM/yyyy - HH:mm",Money.Ar));
@@ -21,20 +22,14 @@ public static class TextReport
             else {b.AppendLine("Periodo:     Sin configurar").AppendLine("Cierre:      Sin configurar").AppendLine("Vencimiento: Sin configurar").AppendLine();WriteTotals(b,[]);b.AppendLine("Movimientos: 0");}
         }
         b.AppendLine().AppendLine("====================================").AppendLine("TOTAL GENERAL").AppendLine("===================================="); WriteTotals(b,current);b.AppendLine("====================================");
-        var serviceRows=ServiceSheet.Order(ServiceSheet.Rows(s.Services,now,now),serviceSort).ToList();
+        var serviceRows=SimpleServices.Order(SimpleServices.Rows(s.Services,now),serviceSort).ToList();
         b.AppendLine().AppendLine("====================================").AppendLine("SERVICIOS - "+now.ToString("MMMM yyyy",Money.Ar).ToUpper(Money.Ar)).AppendLine("====================================");
         foreach(var r in serviceRows)
         {
             b.AppendLine().AppendLine(r.Name+" · "+r.Status.ToUpper(Money.Ar));
-            if(!r.Applicable)continue;
-            b.AppendLine("Exigible: "+(r.Confirmed?Money.Format(r.Obligation!.Amount,r.Currency):"SIN CARGAR"))
-                .AppendLine("Abonado:  "+Money.Format(r.Paid,r.Currency));
-            if(r.Confirmed&&r.Balance>0)b.AppendLine("Saldo:    "+Money.Format(r.Balance,r.Currency));
-            if(r.PaymentDate is {} date)b.AppendLine("Pago:     "+date.ToString("dd/MM/yyyy"));
-            if(r.Indicator.Length>0)b.AppendLine(r.Indicator.ToUpper(Money.Ar));
-            if(r.Obligation?.Notes is {Length:>0} notes)b.AppendLine(notes);
+            if(r.Paid is {} paid)
+                b.AppendLine("  "+Money.Format(paid,r.Currency)+(r.PaymentDate is {} date?"  ·  "+date.ToString("dd/MM/yyyy",Money.Ar):""));
         }
-        b.AppendLine().AppendLine($"Pagados: {serviceRows.Count(r=>r.Status=="Pagado")} · Parciales: {serviceRows.Count(r=>r.Status=="Parcial")} · Pendientes: {serviceRows.Count(r=>r.Status is "Pendiente" or "Sin cargar")}");
         return b.ToString();
     }
     private static void WriteTotals(StringBuilder b,List<Movement> rows)
@@ -59,7 +54,7 @@ public sealed class ExportService(FinanceStore store)
             var s=await store.ReadAsync();var path=LocalConfig.ResolveExportPath(s.Settings.GetValueOrDefault("export_path"),true);
             if(string.IsNullOrWhiteSpace(path)){Status="Elegí una carpeta en Configuración → Exportación de resumen";return false;}
             var preferences=LocalConfig.Preferences();
-            if(!force&&preferences.ExportedRevision==s.Revision&&preferences.ExportedConnection==store.Profile.Identity&&preferences.ExportedServiceSort==preferences.ServiceSort&&File.Exists(path)&&File.GetLastWriteTime(path).Date==DateTime.Today){Status="Resumen actualizado";return true;}
+            if(!force&&preferences.ExportedRevision==s.Revision&&preferences.ExportedConnection==store.Profile.Identity&&preferences.ExportedServiceSort==preferences.ServiceSort&&preferences.ExportedReportVersion==TextReport.FormatVersion&&File.Exists(path)&&File.GetLastWriteTime(path).Date==DateTime.Today){Status="Resumen actualizado";return true;}
             var folder=Path.GetDirectoryName(path);
             if(!Path.IsPathFullyQualified(path) || string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) throw new IOException("Destino no disponible");
             BeforeFileWrite?.Invoke();
@@ -67,7 +62,7 @@ public sealed class ExportService(FinanceStore store)
             await File.WriteAllTextAsync(temp,TextReport.Render(s,DateTime.Now,preferences.ServiceSort),new UTF8Encoding(false));
             if(File.Exists(path)) File.Replace(temp,path,null);else File.Move(temp,path);
             temp=null; await store.MarkExportedAsync(s.Revision);
-            LocalConfig.UpdatePreferences(p=>p.ExportPath==path?p with{ExportedRevision=s.Revision,ExportedConnection=store.Profile.Identity,ExportedServiceSort=preferences.ServiceSort}:p);
+            LocalConfig.UpdatePreferences(p=>p.ExportPath==path?p with{ExportedRevision=s.Revision,ExportedConnection=store.Profile.Identity,ExportedServiceSort=preferences.ServiceSort,ExportedReportVersion=TextReport.FormatVersion}:p);
             Status="Resumen actualizado · "+DateTime.Now.ToString("HH:mm");return true;
         }
         catch(Exception e) { LocalConfig.Log(e); Status="Resumen pendiente · se reintentará automáticamente"; return false; }

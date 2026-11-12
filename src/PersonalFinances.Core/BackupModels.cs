@@ -57,8 +57,8 @@ public sealed record BackupImportManifest(string Key, string Batch, string Sourc
     ImmutableArray<BackupImportLine> Lines, DateTimeOffset ImportedAt);
 public sealed record BackupDocument
 {
-    [JsonRequired] public int BackupFormatVersion { get; init; } = 5;
-    [JsonRequired] public int DatabaseSchemaVersion { get; init; } = 7;
+    [JsonRequired] public int BackupFormatVersion { get; init; } = 6;
+    [JsonRequired] public int DatabaseSchemaVersion { get; init; } = 8;
     [JsonRequired] public string Application { get; init; } = "Personal Finances";
     [JsonRequired] public string ApplicationVersion { get; init; } = "";
     [JsonRequired] public Guid BackupId { get; init; } = Guid.NewGuid();
@@ -93,8 +93,8 @@ public static class BackupValidation
 
     public static void Validate(BackupDocument b)
     {
-        if(b.BackupFormatVersion is not (1 or 2 or 3 or 4 or 5))throw new RuleException("Esta versión del respaldo no es compatible. Actualizá Personal Finances para abrirlo.");
-        Require((b.BackupFormatVersion==1 && b.DatabaseSchemaVersion==3 || b.BackupFormatVersion==2 && b.DatabaseSchemaVersion==4 || b.BackupFormatVersion==3 && b.DatabaseSchemaVersion==5 || b.BackupFormatVersion==4 && b.DatabaseSchemaVersion==6 || b.BackupFormatVersion==5 && b.DatabaseSchemaVersion==7),"versión de base de datos incompatible.");
+        if(b.BackupFormatVersion is not (1 or 2 or 3 or 4 or 5 or 6))throw new RuleException("Esta versión del respaldo no es compatible. Actualizá Personal Finances para abrirlo.");
+        Require((b.BackupFormatVersion==1 && b.DatabaseSchemaVersion==3 || b.BackupFormatVersion==2 && b.DatabaseSchemaVersion==4 || b.BackupFormatVersion==3 && b.DatabaseSchemaVersion==5 || b.BackupFormatVersion==4 && b.DatabaseSchemaVersion==6 || b.BackupFormatVersion==5 && b.DatabaseSchemaVersion==7 || b.BackupFormatVersion==6 && b.DatabaseSchemaVersion==8),"versión de base de datos incompatible.");
         Require(b.Application=="Personal Finances"&&!string.IsNullOrWhiteSpace(b.ApplicationVersion)&&b.ApplicationVersion.Length<=160,"aplicación de origen desconocida.");
         Require(b.BackupId!=Guid.Empty&&b.CreatedAt.Year>=2020&&Guid.TryParseExact(b.LedgerId,"N",out _),"identificación incompleta.");
         Require(!b.Cards.IsDefault&&!b.Categories.IsDefault&&!b.Periods.IsDefault&&!b.Movements.IsDefault&&!b.Audit.IsDefault&&!b.Imports.IsDefault,"faltan colecciones.");
@@ -147,7 +147,7 @@ public static class BackupValidation
         var services=b.Services.ToDictionary(x=>x.Id);var obligations=b.ServiceObligations.ToDictionary(x=>x.Id);
         foreach(var s in b.Services){ServiceRules.Validate(s);Require(s.CardId==null||b.Cards.Any(c=>c.Id==s.CardId),"tarjeta de servicio inexistente.");}
         foreach(var p in b.ServicePayments)Require(obligations.ContainsKey(p.ObligationId)&&Guid.TryParseExact(p.Token,"N",out _)&&ServiceRules.DateValid(p.Date)&&ServiceRules.MoneyValid(p.Amount)&&p.Amount>0&&ServiceRules.Methods.Contains(p.Method)&&p.Notes!=null&&p.Notes.Length<=4000&&p.Version>0,"pago de servicio inválido.");
-        foreach(var o in b.ServiceObligations){Require(services.ContainsKey(o.ServiceId),"servicio inexistente.");ServiceRules.Validate(o,services[o.ServiceId],b.ServicePayments.Where(p=>p.ObligationId==o.Id&&!p.Voided).Sum(p=>p.Amount));}
+        foreach(var o in b.ServiceObligations){Require(services.ContainsKey(o.ServiceId),"servicio inexistente.");ServiceRules.Validate(o,services[o.ServiceId],b.ServicePayments.Where(p=>p.ObligationId==o.Id&&!p.Voided).Sum(p=>p.Amount));Require(!o.SheetRecorded||b.BackupFormatVersion>=6,"datos simplificados en un formato anterior.");}
         Require(b.ServiceObligations.Select(o=>(o.ServiceId,Key:o.Period.Year*100+o.Period.Month,Currency:services[o.ServiceId].Type=="Tarjeta de crédito"?o.Currency:"single")).Distinct().Count()==b.ServiceObligations.Count,"períodos de servicios duplicados.");
     }
     public static List<DateTime> Months(BackupDocument b)=>b.BackupFormatVersion<4?b.ServiceObligations.Select(o=>o.Period).Distinct().Order().ToList():b.ServiceMonths;

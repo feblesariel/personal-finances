@@ -39,7 +39,7 @@ internal static class ServiceTests
         var snapshot=await store.ReadAsync();check(snapshot.Services.Obligations.Count(x=>x.ServiceId==s.Id)==3,"Servicios: historial completo del servicio");
         var after=await store.CaptureBackupAsync("test");
         check(before.Document.Movements.SequenceEqual(after.Document.Movements)&&before.Document.Periods.SequenceEqual(after.Document.Periods),"Servicios: VISA informativa no crea consumos ni cambia dashboard, estadísticas o períodos");
-        var text=TextReport.Render(snapshot,new(2026,11,11));check(text.IndexOf("SERVICIOS -",StringComparison.Ordinal)>text.IndexOf("TOTAL GENERAL",StringComparison.Ordinal)&&text.Contains("MÍNIMO CUBIERTO")&&text.Contains("Exigible:"),"Servicios: TXT agrega sección después de tarjetas y separa monedas");
+        var text=TextReport.Render(snapshot,new(2026,11,11));check(text.IndexOf("SERVICIOS -",StringComparison.Ordinal)>text.IndexOf("TOTAL GENERAL",StringComparison.Ordinal)&&text.Contains("PAGADO")&&!text.Contains("Exigible:"),"Servicios: TXT simplificado agrega sección después de tarjetas");
         var invalid=after.Document with{ServicePayments=after.Document.ServicePayments.Select(x=>x with{Amount=9999999}).ToList()};
         await Reject(()=>Task.Run(()=>BackupValidation.Validate(invalid)),"Servicios: respaldo con pagos inválidos rechazado antes de modificar destino");
         var flexible=new RecurringService{Name="Sin vencimiento",UsualAmount=80};flexible.Id=await store.SaveServiceAsync(flexible);

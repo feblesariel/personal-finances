@@ -91,6 +91,7 @@ internal static class Program
             window=await TableLayoutChecks.Run(window,profile,store,app,artifacts,Check);
             await ServiceUiChecks.Run(window,profile,Check,Screenshot,artifacts);
             await ServiceCurrencyUiChecks.Run(window,profile,Check,Screenshot,artifacts);
+            await ExportFileNameUiChecks.Run(window,profile,Check,Screenshot,artifacts);
             await BackupUiChecks.Run(window,profile,app,temp,artifacts,Check);
             Check(!Visuals<FrameworkElement>(window).Any(e=>Validation.GetHasError(e)),"Controles sin errores de validación WPF"); Check(Visuals<ComboBox>(window).Where(c=>c.ItemsSource is IEnumerable<Choice>).All(c=>c.SelectedItem!=null),"Selectores de filtros con opción visible"); Check(trace.Errors.Count==0,"Enlaces WPF sin errores: "+string.Join(";",trace.Errors.Take(4)));
             await System.IO.File.WriteAllLinesAsync(System.IO.Path.Combine(artifacts,"ui-test-results.txt"),results.Prepend(DateTime.Now.ToString("O")));Console.WriteLine($"RESULT UI: {results.Count} passed, 0 failed");

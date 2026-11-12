@@ -5,9 +5,14 @@ namespace PersonalFinances.Core;
 public sealed partial class FinanceStore
 {
     private const string ServiceSql="SELECT id,name,type,frequency,currency,usual_amount UsualAmount,usual_amount_usd UsualAmountUsd,due_day DueDay,due_month DueMonth,notes,active,card_id CardId,version FROM recurring_services";
-    private const string ObligationSql="SELECT id,service_id ServiceId,period,due,COALESCE(amount,0) Amount,amount_confirmed AmountConfirmed,currency,minimum,installment,installments,notes,version FROM service_obligations";
+    private const string LegacyObligationSql="SELECT id,service_id ServiceId,period,due,COALESCE(amount,0) Amount,amount_confirmed AmountConfirmed,currency,minimum,installment,installments,notes,version FROM service_obligations";
+    private static readonly string ObligationSql=LegacyObligationSql.Replace(" FROM service_obligations",",sheet_recorded SheetRecorded,sheet_paid SheetPaid,sheet_date SheetDate,sheet_notes SheetNotes,sheet_currency SheetCurrency FROM service_obligations");
     private const string PaymentSql="SELECT id,token,obligation_id ObligationId,payment_date Date,amount,method,notes,voided,version FROM service_payments";
-    private static async Task<ServiceLedger> ReadServices(MySqlConnection c,MySqlTransaction t) => new ServiceLedger((await c.QueryAsync<RecurringService>(ServiceSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServiceObligation>(ObligationSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServicePayment>(PaymentSql+" ORDER BY id",transaction:t)).ToList()){Months=(await c.QueryAsync<DateTime>("SELECT period FROM service_months ORDER BY period",transaction:t)).ToList()};
+    private static async Task<ServiceLedger> ReadServices(MySqlConnection c,MySqlTransaction t)
+    {
+        var simple=await c.ExecuteScalarAsync<bool>("SELECT EXISTS(SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_obligations' AND COLUMN_NAME='sheet_recorded')",transaction:t);
+        return new ServiceLedger((await c.QueryAsync<RecurringService>(ServiceSql+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServiceObligation>((simple?ObligationSql:LegacyObligationSql)+" ORDER BY id",transaction:t)).ToList(),(await c.QueryAsync<ServicePayment>(PaymentSql+" ORDER BY id",transaction:t)).ToList()){Months=(await c.QueryAsync<DateTime>("SELECT period FROM service_months ORDER BY period",transaction:t)).ToList()};
+    }
     private static async Task MigrateServices(MySqlConnection c)
     {
         if(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations WHERE version=4")>0)return;
@@ -18,7 +23,8 @@ public sealed partial class FinanceStore
             INSERT INTO schema_migrations VALUES(4,UTC_TIMESTAMP(6));
             """,commandTimeout:120);
     }
-    public Task<int> SaveServiceAsync(RecurringService s,ServiceCurrencyCorrection? currencyCorrection=null)=>Write(async(c,t)=>
+    public Task<int> SaveServiceAsync(RecurringService s,ServiceCurrencyCorrection? currencyCorrection=null)=>Write((c,t)=>SaveService(c,t,s,currencyCorrection));
+    private static async Task<int> SaveService(MySqlConnection c,MySqlTransaction t,RecurringService s,ServiceCurrencyCorrection? currencyCorrection=null)
     {
         ServiceRules.Validate(s);
         if(s.CardId!=null)ServiceRules.Require(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM cards WHERE id=@CardId",s,t)==1,"Tarjeta inexistente.");
@@ -30,7 +36,7 @@ public sealed partial class FinanceStore
         if(currencyCorrection!=null)await CorrectServiceCurrency(c,t,old,s,currencyCorrection);
         await Audit(c,t,"recurring_services",s.Id,"edit",old);
         await c.ExecuteAsync("UPDATE recurring_services SET name=@Name,type=@Type,frequency=@Frequency,currency=@Currency,usual_amount=@UsualAmount,usual_amount_usd=@UsualAmountUsd,due_day=@DueDay,due_month=@DueMonth,notes=@Notes,active=@Active,card_id=@CardId,version=version+1 WHERE id=@Id",s,t);return s.Id;
-    });
+    }
     private static async Task MigrateFlexibleServices(MySqlConnection c)
     {
         if(await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations WHERE version=5")>0)return;

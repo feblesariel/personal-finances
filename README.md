@@ -28,7 +28,7 @@ Referencias: [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0), [
 2. Ingresá host, puerto, usuario, contraseña y nombre de base. Se sugieren `localhost`, `3306` y `personal_finances`; usuario y contraseña no tienen valores predefinidos.
 3. Presioná **Probar conexión**. Si la base no existe, podés marcar **Crear la base si no existe**. Si tu usuario no tiene permiso CREATE, pedí al administrador una base vacía o conectá una base existente de Personal Finances.
 4. Presioná **Guardar**. Se ejecutan migraciones versionadas e idempotentes; una base nueva recibe VISA, MASTERCARD y las categorías iniciales, sin consumos ficticios. Una base existente conserva sus datos. Se rechaza una base con tablas ajenas a la aplicación.
-5. En **Configuración → Exportación de resumen → Configurar carpeta**, elegí una carpeta existente, probá escritura y guardá. Puede ser cualquier carpeta local o sincronizada con Google Drive; no se presupone una unidad ni una letra específica.
+5. En **Configuración → Exportación de resumen → Configurar archivo**, elegí una carpeta existente y el nombre del TXT, probá escritura y guardá. Puede ser cualquier carpeta local o sincronizada con Google Drive; no se presupone una unidad ni una letra específica.
 6. Configurá las fechas reales del primer período de cada tarjeta en **Tarjetas y períodos**.
 
 Usá un usuario MySQL propio, con permisos solo sobre la base de Personal Finances: SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX y REFERENCES para tablas y migraciones. Crear una base nueva requiere además permiso de creación sobre esa base. La aplicación no necesita permisos globales de administrador ni permisos para borrar bases. No distribuye credenciales administrativas. Un administrador de MySQL puede preparar estos permisos mediante sus herramientas habituales.
@@ -53,7 +53,7 @@ La compilación Release también queda en `artifacts\Release`. Para automatizaci
 Todo lo específico del equipo está en `%LOCALAPPDATA%\PersonalFinances`, fuera del código fuente:
 
 - `connection.dpapi`: host, usuario, contraseña y base cifrados con Windows DPAPI para el usuario actual. No puede trasladarse como credencial a otro usuario/equipo.
-- `preferences.json`: carpeta de exportación y revisión exportada, sin contraseñas.
+- `preferences.json`: carpeta, nombre del archivo de exportación y revisión exportada, sin contraseñas.
 - `Tables`: preferencias independientes de las tablas.
 - `errors.log`: tipos/códigos de error; no registra contraseñas ni parámetros SQL.
 
@@ -73,7 +73,7 @@ Las utilidades de importación TXT se conservan internamente para mantenimiento 
 
 ## Exportación del resumen
 
-`RESUMEN_TARJETAS.txt` contiene fecha de actualización, tarjeta, período, fechas, saldos netos ARS/USD, cantidad de movimientos y total general. No incluye detalles, categorías ni historial. Los movimientos sin período siguen visibles en la aplicación y no se incluyen en un saldo de período.
+Por defecto se usa `RESUMEN_TARJETAS.txt`. Desde **Configuración → Exportación de resumen → Configurar archivo** podés cambiar carpeta y nombre. Se admite escribir el nombre con o sin `.txt`; se validan nombres de Windows y se conserva esta elección al cambiar de carpeta o importar respaldos. El archivo contiene fecha de actualización, tarjeta, período, fechas, saldos netos ARS/USD, cantidad de movimientos y total general. No incluye detalles, categorías ni historial. Los movimientos sin período siguen visibles en la aplicación y no se incluyen en un saldo de período.
 
 Se actualiza al cambiar datos y se puede usar **Exportar ahora**. Usa UTF-8, importes argentinos y un temporal con reemplazo seguro. Si Drive o la carpeta no están disponibles, el consumo queda guardado en MySQL; la exportación se reintenta cada 30 segundos y al siguiente inicio. La recepción en otros dispositivos depende del cliente de sincronización de Drive.
 
@@ -116,39 +116,24 @@ La suite incluye una transferencia entre dos bases independientes, comparación 
 
 Las pruebas de MySQL reciben credenciales de prueba por las variables de proceso `PF_ADMIN_USER` y `PF_ADMIN_PASSWORD`, usan bases temporales `personal_finances_tests_*` y las eliminan al terminar. Aíslan configuración y carpetas de exportación y no insertan datos en producción. Los resultados se guardan en `artifacts`, excluida de Git. Las pruebas del instalador usan destinos temporales propios. No versionar datos reales, archivos `.pfinance`, respaldos SQL, ejecutables, credenciales ni configuración local. Esta distribución compilada desde fuente no tiene firma Authenticode.
 
-## Servicios: planilla y modal (1.7)
+## Servicios: planilla simple (1.8)
 
-La planilla conserva su diseño compacto, pero es **sólo lectura**. Un clic selecciona la fila; **doble clic o Enter** abre el servicio del mes seleccionado. Escape cierra el modal. Las columnas siguen admitiendo cambios de ancho/orden, clasificación y Restablecer tabla, sin modificar datos.
+La tabla muestra Servicio, Periodicidad, Monto abonado, Fecha de pago, Estado y Observaciones. Un clic selecciona; doble clic o Enter abre un único modal. Se editan nombre, periodicidad, monto con su moneda, fecha y observaciones. Al abrir un servicio existente, el foco queda en el monto. Escape cancela. Guardar reemplaza el dato visible de la fila: nunca suma pagos sucesivos.
 
-  El modal muestra importe del período, **nuevo** monto abonado, fecha del pago y vencimiento opcional. El nuevo abono siempre empieza vacío. Si ya hay pagos, muestra la fecha del último pago registrado: cambiarla y guardar **sin un nuevo monto** corrige ese mismo pago, conservando su importe, notas e historial de auditoría. Los demás pagos se corrigen desde Historial. Al ingresar un nuevo monto se propone hoy, conservando una fecha elegida expresamente; al borrar ese monto se recupera la fecha del pago registrado. Guardar sin cambiar la fecha ni ingresar un abono sólo modifica importe/vencimiento; guardar con abono positivo agrega un registro independiente. No supera el saldo ni duplica por doble clic/Enter o reintento de una respuesta perdida. Las correcciones de fecha actualizan tabla, vigencia anual y TXT; los respaldos conservan la fecha corregida. Los errores mantienen el modal abierto. Corrección disponible desde **1.7.1**.
+- **PAGADO:** monto informado (incluido cero explícito) y fecha de pago.
+- **PENDIENTE:** monto vacío. Al guardar se limpia también la fecha persistida; el calendario propone hoy para facilitar la próxima carga.
+- Un monto informado requiere fecha válida. Se rechazan negativos y guardados concurrentes desactualizados. Guardar repetidamente durante una operación no duplica datos.
 
-- **SIN CARGAR:** importe no informado, almacenado como NULL en MySQL.
-- **SIN CARGO:** importe confirmado igual a cero.
-- **PENDIENTE / PARCIAL / PAGADO:** calculados con los pagos reales.
-- Vencido y mínimo cubierto son indicadores discretos; cubrir el mínimo no cancela el saldo.
+**Nuevo período** propone el mes siguiente y conserva la lista. Los mensuales empiezan pendientes, sin monto, fecha ni observaciones. Los anuales mantienen el último dato registrado, con su monto y fecha originales, hasta que se modifiquen manualmente. No hay aniversarios, vencimientos, mínimos, pagos parciales, acumulados ni badges de vigencia en esta experiencia. Editar un anual en otro mes conserva el valor del período anterior. Un pago anual antiguo no crea un mes de trabajo adicional en el selector.
 
-Desde **1.7.2**, cambiar Moneda en **Datos del servicio** permite corregir también la obligación de la fila y sus pagos, con una opción visible activada por defecto. Se conservan importes, fechas, IDs, notas y medios de pago: se corrige la moneda declarada, sin hacer conversiones. También se actualizan los períodos futuros sin importe ni pagos; los demás períodos históricos mantienen su moneda. Para una suscripción anual se corrige la obligación que cubre el mes consultado, conservando su vigencia y su único pago. La operación es transaccional y auditada, valida versiones y pagos concurrentes, refresca la tabla y se refleja en TXT y respaldos. Desmarcar la opción permite cambiar sólo la configuración para períodos nuevos. Los resúmenes de tarjetas de Servicios siguen expresados en ARS.
+**Agregar servicio** usa el mismo formulario. Eliminar servicio solicita confirmación por nombre y elimina todos sus períodos y pagos internos en una transacción, sin afectar consumos. La aplicación genera y verifica automáticamente un respaldo completo previo en la carpeta local `Backups`, con su clave protegida mediante Windows DPAPI para recuperación desde el mismo usuario. Si falla esa copia, no elimina nada. La exportación portable habitual desde Configuración mantiene su contraseña elegida por el usuario.
 
-**Nuevo período** conserva los servicios activos y comienza sin importes confirmados ni pagos copiados. Los meses anteriores y los servicios inactivos conservan su historial. Cada tarjeta ocupa una fila ARS con el importe final ingresado manualmente; los antiguos USD siguen archivados, sin conversiones ni mezcla con consumos.
+La tabla conserva ajuste de ancho, orden de columnas y ordenamiento. Restablecer tabla sólo restaura presentación. El TXT conserva intacto su bloque de consumos; debajo muestra bloques cortos por servicio: nombre y estado en una línea, e importe y fecha debajo cuando hay pago. Los pendientes sin monto no muestran ceros ficticios. Este formato conserva los nombres largos y facilita la lectura en el celular. No incluye cargos exigibles, vencimientos, historial ni vigencias. La exportación sigue en segundo plano, con reemplazo seguro y reintentos independientes del guardado.
 
-### Servicios anuales
+### Datos, migración y respaldos
 
-Una obligación anual completamente pagada cubre desde su fecha real de pago completo hasta antes del aniversario siguiente (`AddYears(1)`, incluyendo el ajuste de 29/02). Durante la vigencia se muestra PAGADO con la fecha original en los meses cubiertos, sin crear doce pagos ni repetir obligaciones. El mes actual usa la fecha de hoy; los demás meses se consultan a su cierre. Historial conserva todas las renovaciones. Registrar renovación permite cargar otro pago anual sin borrar el anterior; antes de pagar nunca se muestra una vigencia ficticia. Al vencer, la renovación queda Sin cargar o muestra la obligación pendiente que corresponda.
+La migración incremental **8** agrega cinco columnas opcionales de planilla a `service_obligations`: indicador de carga directa, monto, fecha, observaciones y moneda. No modifica ni elimina los importes, pagos, observaciones o relaciones anteriores. Los datos antiguos se muestran a partir de sus pagos registrados; al editarlos se guarda el valor directo en esas columnas. Los pagos antiguos permanecen internamente para compatibilidad y recuperación, sin mostrarse como historial ni seguir acumulándose.
 
-### Historial y eliminación
+El respaldo **v6/esquema 8** conserva la planilla, todos los períodos y los registros previos. Acepta respaldos v1–v5; la restauración mantiene validación antes de modificar datos, cifrado, copia previa, relaciones y transacciones. Nunca sustituye credenciales MySQL ni ruta local de Drive del equipo destino. La moneda visible de cada fila se guarda junto con el monto, evitando discrepancias entre modal, tabla y TXT.
 
-Historial permite consultar, corregir y anular pagos individuales. Datos del servicio permite cambiar su configuración. **Eliminar servicio** es definitivo y transaccional: borra definición, obligaciones, pagos y auditoría propia, sin tocar otros servicios ni consumos. Exige un respaldo completo cifrado generado con el sistema existente, verificado y todavía disponible, y confirmación explícita del nombre/historial. Si los datos o el archivo cambian después de la copia, se exige generar otra. Conservá la contraseña del respaldo para recuperar los datos mediante la importación completa habitual.
-
-### Corrección del bloqueo y diagnóstico
-
-La versión anterior guardaba durante `RowEditEnding`, cancelaba y volvía a confirmar la edición y refrescaba la CollectionView en ese ciclo. Refrescar una vista con edición abierta produce `InvalidOperationException`; se agregó una prueba que reproduce ese mecanismo. Los registros anteriores incluían esa excepción sin pila, por lo que no permiten atribuir retrospectivamente cada bloqueo a una única causa.
-
-Se eliminó toda edición de celdas y sus eventos reentrantes. El guardado del modal usa comandos que rechazan ejecuciones repetidas, transacciones y tokens de pago únicos. La exportación del TXT, incluido el acceso síncrono al sistema de archivos/Drive, corre en un worker separado; no se espera para cerrar un pago guardado. Fallar Drive no revierte el pago. Se mantiene el reemplazo seguro y el reintento automático cada 30 segundos. Los logs locales incluyen operación, duración, hilo y métodos de origen de errores, sin importes, nombres de servicios, SQL parametrizado ni credenciales.
-
-La suite WPF registra 60 pagos consecutivos en seis servicios, intenta doble Guardar/reaperturas y comprueba actividad del dispatcher con una escritura del TXT deliberadamente bloqueada. También prueba la tabla en lectura, el modal, las fechas, los estados, la alineación y los respaldos. Las bases `personal_finances_tests_*` usan un servidor independiente configurable con `PF_ADMIN_PORT`.
-
-### Migración y respaldos
-
-La migración no destructiva **7** permite `amount=NULL` en obligaciones: únicamente los importes ya marcados sin confirmar pasan de su antiguo cero interno a NULL. Se conservan IDs, importes confirmados, pagos, notas y relaciones. La cobertura anual se deriva de pagos existentes; no requiere duplicarlos.
-
-El respaldo **v5/esquema 7** conserva NULL/cero, todos los meses, pagos, historial y datos para recalcular vigencias. Acepta v1–v4. La restauración conserva cifrado, copia previa, validación e integridad transaccional. No reemplaza credenciales MySQL ni ruta local de Drive. El bloque Servicios del TXT refleja los nuevos estados, fechas y vigencias; el bloque de consumos de tarjetas conserva sus cálculos.
+Las pruebas cubren alta/edición/borrado confirmado, estados, correcciones sin acumulación, nuevos períodos, anuales persistentes, notas, monedas, respaldos antiguos y nuevos, restauración completa, conservación de consumos y 60 guardados consecutivos con Drive bloqueado mientras el dispatcher WPF sigue respondiendo.

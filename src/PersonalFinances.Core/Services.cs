@@ -31,6 +31,11 @@ public sealed record ServiceObligation
     public decimal? Minimum { get; set; }
     public int? Installment { get; set; }
     public int? Installments { get; set; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] public bool SheetRecorded {get;set;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] public decimal? SheetPaid {get;set;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] public DateTime? SheetDate {get;set;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] public string? SheetNotes {get;set;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] public string? SheetCurrency {get;set;}
     public string Notes { get; set; } = "";
     public int Version { get; set; } = 1;
 }
@@ -82,6 +87,7 @@ public static class ServiceRules
     }
     public static void Validate(ServiceObligation o,RecurringService s,decimal paid)
     {
+        Require(!o.SheetRecorded?o.SheetPaid==null&&o.SheetDate==null&&o.SheetNotes==null&&o.SheetCurrency==null:(o.SheetPaid==null&&o.SheetDate==null||o.SheetPaid is {} value&&MoneyValid(value)&&o.SheetDate is {} date&&DateValid(date))&&o.SheetCurrency is "ARS" or "USD"&&o.SheetNotes!=null&&o.SheetNotes.Length<=4000,"Monto, fecha, moneda u observaciones de la planilla inválidos.");
         Require(DateValid(o.Period)&&o.Period.Day==1&&(o.Due==null||DateValid(o.Due.Value))&&MoneyValid(o.Amount)&&o.Amount>=paid&&o.Currency is "ARS" or "USD","Fecha o importe inválido. El total debe cubrir los pagos existentes.");
         Require(o.AmountConfirmed||o.Amount==0&&paid==0,"Un importe sin cargar no puede tener cargos ni pagos.");
         Require(o.Minimum==null||s.Type=="Tarjeta de crédito"&&MoneyValid(o.Minimum.Value)&&o.Minimum<=o.Amount,"El mínimo debe corresponder a una tarjeta y no superar el total.");

@@ -11,7 +11,7 @@ public sealed record ConnectionProfile(string Host,uint Port,string User,string 
     [JsonIgnore] public string ConnectionString=>new MySqlConnectionStringBuilder{Server=Host,Port=Port,UserID=User,Password=Password,Database=Database,ConnectionTimeout=5,DefaultCommandTimeout=30,AllowPublicKeyRetrieval=Host is "localhost" or "127.0.0.1",SslMode=MySqlSslMode.Preferred}.ConnectionString;
     [JsonIgnore] public string Identity=>Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{Host}|{Port}|{User}|{Database}")));
 }
-public sealed record AppPreferences(string? ExportPath=null,bool LegacyExportPathMigrated=false,long? ExportedRevision=null,string? ExportedConnection=null,string ServiceSort="ServiceId:Ascending",string? ExportedServiceSort=null);
+public sealed record AppPreferences(string? ExportPath=null,bool LegacyExportPathMigrated=false,long? ExportedRevision=null,string? ExportedConnection=null,string ServiceSort="ServiceId:Ascending",string? ExportedServiceSort=null,int? ExportedReportVersion=null);
 public static class LocalConfig
 {
     // In-process injection isolates test profiles; the installed app uses the Windows user profile.
@@ -40,7 +40,13 @@ public static class LocalConfig
     }
     public static void SetExportFolder(string folder)
     {
-        var path=Path.Combine(Path.GetFullPath(folder),FinanceStore.ExportFileName);
+        var previous=ResolveExportPath();SetExportDestination(folder,previous==null?FinanceStore.ExportFileName:Path.GetFileName(previous));
+    }
+    public static void SetExportDestination(string folder,string fileName)
+    {
+        var name=ExportDestination.NormalizeFileName(fileName);
+        if(!Path.IsPathFullyQualified(folder))throw new RuleException("Seleccioná una carpeta con su ruta completa.");
+        var path=Path.Combine(Path.GetFullPath(folder),name);
         UpdatePreferences(p=>p with{ExportPath=path,LegacyExportPathMigrated=true,ExportedRevision=null,ExportedConnection=null});
     }
     public static void Log(Exception e)
@@ -94,6 +100,18 @@ public static class DatabaseSetup
 }
 public static class ExportDestination
 {
+    public static string NormalizeFileName(string name)
+    {
+        name=name?.Trim()??"";
+        if(name.Length==0||name.IndexOfAny(Path.GetInvalidFileNameChars())>=0||name.EndsWith('.')||name is "." or "..")throw new RuleException("Ingresá un nombre de archivo válido, sin carpetas ni caracteres especiales como /, \\, : o *.");
+        var stem=name.Split('.')[0].TrimEnd(' ');
+        if(Regex.IsMatch(stem,@"\A(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])\z",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant))throw new RuleException("Ese nombre está reservado por Windows. Elegí otro nombre para el resumen.");
+        var extension=Path.GetExtension(name);
+        if(extension.Length==0)name+=".txt";
+        else if(!extension.Equals(".txt",StringComparison.OrdinalIgnoreCase))throw new RuleException("El archivo de resumen debe tener extensión .txt.");
+        if(string.IsNullOrWhiteSpace(Path.GetFileNameWithoutExtension(name))||name.Length>200)throw new RuleException("El nombre debe tener entre 1 y 200 caracteres, incluyendo .txt.");
+        return name;
+    }
     public static async Task TestAsync(string folder)
     {
         if(!Path.IsPathFullyQualified(folder)||!Directory.Exists(folder))throw new RuleException("Seleccioná una carpeta existente y accesible.");
