@@ -3,7 +3,7 @@ using System.Text;
 namespace PersonalFinances.Core;
 public static class TextReport
 {
-    public const int FormatVersion=2;
+    public const int FormatVersion=3;
     public static string Render(Snapshot s,DateTime now,string serviceSort="ServiceId:Ascending")
     {
         var b=new StringBuilder(); b.AppendLine("PERSONAL FINANCES").AppendLine("Actualizado: "+now.ToString("dd/MM/yyyy - HH:mm",Money.Ar));
@@ -24,12 +24,16 @@ public static class TextReport
         b.AppendLine().AppendLine("====================================").AppendLine("TOTAL GENERAL").AppendLine("===================================="); WriteTotals(b,current);b.AppendLine("====================================");
         var serviceRows=SimpleServices.Order(SimpleServices.Rows(s.Services,now),serviceSort).ToList();
         b.AppendLine().AppendLine("====================================").AppendLine("SERVICIOS - "+now.ToString("MMMM yyyy",Money.Ar).ToUpper(Money.Ar)).AppendLine("====================================");
+        var nameWidth=Math.Max("SERVICIO".Length,serviceRows.Select(r=>r.Name.Length).DefaultIfEmpty(0).Max());
+        var amountWidth=Math.Max("MONTO ABONADO".Length,serviceRows.Select(r=>r.Paid is {} paid?Money.Format(paid,r.Currency).Length:1).DefaultIfEmpty(0).Max());
+        string ServiceLine(string name,string amount,string date,string status)=>name.PadRight(nameWidth)+" | "+amount.PadLeft(amountWidth)+" | "+date.PadRight(10)+" | "+status;
+        var separator=new string('-',nameWidth)+"-+-"+new string('-',amountWidth)+"-+-"+new string('-',10)+"-+-"+new string('-',9);
+        b.AppendLine().AppendLine(ServiceLine("SERVICIO","MONTO ABONADO","FECHA PAGO","ESTADO")).AppendLine(separator);
         foreach(var r in serviceRows)
         {
-            b.AppendLine().AppendLine(r.Name+" · "+r.Status.ToUpper(Money.Ar));
-            if(r.Paid is {} paid)
-                b.AppendLine("  "+Money.Format(paid,r.Currency)+(r.PaymentDate is {} date?"  ·  "+date.ToString("dd/MM/yyyy",Money.Ar):""));
+            b.AppendLine(ServiceLine(r.Name,r.Paid is {} paid?Money.Format(paid,r.Currency):"—",r.PaymentDate?.ToString("dd/MM/yyyy",Money.Ar)??"—",r.Status.ToUpper(Money.Ar)));
         }
+        b.AppendLine(separator);
         return b.ToString();
     }
     private static void WriteTotals(StringBuilder b,List<Movement> rows)

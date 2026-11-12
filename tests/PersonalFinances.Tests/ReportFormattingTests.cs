@@ -13,12 +13,16 @@ internal static class ReportFormattingTests
         var snapshot=new Snapshot([new(){Id=1,Name="VISA"}],[],[new(){Id=1,CardId=1,Name="Noviembre",Start=month,Closing=month.AddMonths(1).AddDays(-1),Due=month.AddMonths(1)}],
             [new(){Id=1,CardId=1,PeriodId=1,Amount=100,Currency="ARS"},new(){Id=2,CardId=1,PeriodId=1,Amount=20,Currency="USD"}],new()){Services=ledger};
         var before=JsonSerializer.Serialize(snapshot);var report=TextReport.Render(snapshot,now).ReplaceLineEndings("\n");var block=report[report.IndexOf("SERVICIOS -",StringComparison.Ordinal)..];
-        check(block.Contains("VISA · PAGADO\n  $ 2.504.268,44  ·  10/11/2026"),"TXT: pago en ARS se lee en un bloque corto con importe y fecha");
-        check(block.Contains("MANTENIMIENTO DE CUENTA · PENDIENTE\n\n"),"TXT: nombres largos no desplazan otros campos");
-        check(block.Contains(longName+" · PENDIENTE"),"TXT: conserva nombres completos sin truncarlos");
-        check(!block[block.IndexOf("MANTENIMIENTO DE CUENTA",StringComparison.Ordinal)..block.IndexOf("GOOGLE ONE",StringComparison.Ordinal)].Contains("$"),"TXT: un pendiente sin monto no inventa un cero ni una fecha");
-        check(block.Contains("GOOGLE ONE · PAGADO\n  US$ 19,99  ·  02/06/2026"),"TXT: anual conserva USD y su fecha de pago original");
-        check(block.Contains("PAGO CERO · PAGADO\n  $ 0,00  ·  10/11/2026"),"TXT: un cero explícito pagado sí muestra su monto y fecha");
+        var table=block.Split('\n').Where(line=>line.Contains(" | ")).ToList();
+        string[] Cells(string name)=>table.Single(line=>line.Split('|')[0].TrimEnd()==name).Split('|').Select(cell=>cell.Trim()).ToArray();
+        check(Cells("VISA").SequenceEqual(new[]{"VISA","$ 2.504.268,44","10/11/2026","PAGADO"}),"TXT: pago en ARS ocupa una sola fila con monto, fecha y estado");
+        check(Cells("SERVICIO").SequenceEqual(new[]{"SERVICIO","MONTO ABONADO","FECHA PAGO","ESTADO"}),"TXT: encabezados claros para las cuatro columnas");
+        var pipePositions=table[0].Select((c,i)=>(c,i)).Where(p=>p.c=='|').Select(p=>p.i).ToArray();
+        check(table.All(line=>line.Select((c,i)=>(c,i)).Where(p=>p.c=='|').Select(p=>p.i).SequenceEqual(pipePositions)),"TXT: nombres largos y monedas distintas mantienen todas las columnas alineadas");
+        check(Cells(longName)[0]==longName&&table.Count==ledger.Services.Count+1,"TXT: conserva nombres completos sin truncar y una fila por servicio");
+        check(Cells("MANTENIMIENTO DE CUENTA").Skip(1).SequenceEqual(new[]{"—","—","PENDIENTE"}),"TXT: un pendiente sin monto no inventa un cero ni una fecha");
+        check(Cells("GOOGLE ONE").Skip(1).SequenceEqual(new[]{"US$ 19,99","02/06/2026","PAGADO"}),"TXT: anual conserva USD y su fecha de pago original");
+        check(Cells("PAGO CERO").Skip(1).SequenceEqual(new[]{"$ 0,00","10/11/2026","PAGADO"}),"TXT: un cero explícito pagado sí muestra su monto y fecha");
         var reverse=TextReport.Render(snapshot,now,"ServiceId:Descending");check(reverse.IndexOf("PAGO CERO",StringComparison.Ordinal)<reverse.IndexOf("MANTENIMIENTO DE CUENTA",StringComparison.Ordinal),"TXT: respeta el orden configurado de los servicios");
         var withoutServices=TextReport.Render(snapshot with{Services=ServiceLedger.Empty},now).ReplaceLineEndings("\n");
         check(report[..report.IndexOf("SERVICIOS -",StringComparison.Ordinal)]==withoutServices[..withoutServices.IndexOf("SERVICIOS -",StringComparison.Ordinal)]&&report.Contains("$ 100,00")&&report.Contains("US$ 20,00"),"TXT: resumen y totales de tarjetas permanecen independientes");
